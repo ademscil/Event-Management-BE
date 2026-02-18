@@ -137,6 +137,16 @@ class UserService {
   }
 
   /**
+   * Validate NPK format
+   * @param {string} npk - NPK
+   * @returns {boolean} True if valid
+   */
+  validateNpk(npk) {
+    const npkRegex = /^[0-9]{1,20}$/;
+    return npkRegex.test(npk);
+  }
+
+  /**
    * Create a new user
    * @param {Object} data - User data
    * @param {string} data.username - Username (3-50 chars, alphanumeric + underscore)
@@ -152,6 +162,12 @@ class UserService {
       // Validate username
       if (!this.validateUsername(data.username)) {
         throw new ValidationError('Username must be 3-50 characters, alphanumeric and underscore only');
+      }
+
+      // Validate NPK
+      const normalizedNpk = typeof data.npk === 'string' ? data.npk.trim() : null;
+      if (normalizedNpk && !this.validateNpk(normalizedNpk)) {
+        throw new ValidationError('NPK must be numeric and up to 20 digits');
       }
 
       // Validate email
@@ -208,6 +224,7 @@ class UserService {
       // Create user
       const result = await pool.request()
         .input('username', sql.NVarChar(50), data.username)
+        .input('npk', sql.NVarChar(50), normalizedNpk || null)
         .input('displayName', sql.NVarChar(200), data.displayName)
         .input('email', sql.NVarChar(200), data.email)
         .input('role', sql.NVarChar(50), data.role)
@@ -218,12 +235,12 @@ class UserService {
         .input('departmentId', sql.UniqueIdentifier, orgHierarchy.departmentId ?? null)
         .query(`
           INSERT INTO Users (
-            Username, DisplayName, Email, Role, UseLDAP, PasswordHash,
+            Username, NPK, DisplayName, Email, Role, UseLDAP, PasswordHash,
             BusinessUnitId, DivisionId, DepartmentId, IsActive, CreatedAt
           )
           OUTPUT INSERTED.*
           VALUES (
-            @username, @displayName, @email, @role, @useLDAP, @passwordHash,
+            @username, @npk, @displayName, @email, @role, @useLDAP, @passwordHash,
             @businessUnitId, @divisionId, @departmentId, 1, GETDATE()
           )
         `);
@@ -266,9 +283,36 @@ class UserService {
         throw new NotFoundError('User not found');
       }
 
+      // Validate NPK
+      const normalizedNpk = typeof data.npk === 'string' ? data.npk.trim() : null;
+      if (normalizedNpk && !this.validateNpk(normalizedNpk)) {
+        throw new ValidationError('NPK must be numeric and up to 20 digits');
+      }
+
       // Validate email if provided
+      if (data.username && !this.validateUsername(data.username)) {
+        throw new ValidationError('Username must be 3-50 characters, alphanumeric and underscore only');
+      }
+
+      const normalizedNpkForUpdate = data.npk === undefined ? undefined : (typeof data.npk === 'string' ? data.npk.trim() : '');
+      if (normalizedNpkForUpdate && !this.validateNpk(normalizedNpkForUpdate)) {
+        throw new ValidationError('NPK must be numeric and up to 20 digits');
+      }
+
       if (data.email && !this.validateEmail(data.email)) {
         throw new ValidationError('Invalid email format');
+      }
+
+      // Check for duplicate username if username is being changed
+      if (data.username) {
+        const usernameCheck = await pool.request()
+          .input('username', sql.NVarChar(50), data.username)
+          .input('userId', sql.UniqueIdentifier, userId)
+          .query('SELECT UserId FROM Users WHERE Username = @username AND UserId != @userId');
+
+        if (usernameCheck.recordset.length > 0) {
+          throw new ConflictError(`Username '' already exists`);
+        }
       }
 
       // Check for duplicate email if email is being changed
@@ -310,6 +354,14 @@ class UserService {
       const request = pool.request();
       request.input('userId', sql.UniqueIdentifier, userId);
 
+      if (data.username !== undefined) {
+        updateFields.push('Username = @username');
+        request.input('username', sql.NVarChar(50), data.username);
+      }
+      if (data.npk !== undefined) {
+        updateFields.push('NPK = @npk');
+        request.input('npk', sql.NVarChar(50), normalizedNpkForUpdate || null);
+      }
       if (data.displayName !== undefined) {
         updateFields.push('DisplayName = @displayName');
         request.input('displayName', sql.NVarChar(200), data.displayName);
@@ -412,8 +464,9 @@ class UserService {
         .input('userId', sql.UniqueIdentifier, userId)
         .query(`
           SELECT
-            u.UserId,
-            u.Username,
+          u.UserId,
+          u.Username,
+          u.NPK,
             u.DisplayName,
             u.Email,
             u.Role,
@@ -471,7 +524,7 @@ class UserService {
       }
 
       if (filter.search) {
-        conditions.push('(u.Username LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)');
+        conditions.push('(u.NPK LIKE @search OR u.Username LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)');
         request.input('search', sql.NVarChar(210), `%${filter.search}%`);
       }
 
@@ -484,6 +537,7 @@ class UserService {
         SELECT
           u.UserId,
           u.Username,
+          u.NPK,
           u.DisplayName,
           u.Email,
           u.Role,
@@ -668,3 +722,7 @@ module.exports.UserService = UserService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+
+
+
+

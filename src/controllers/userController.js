@@ -12,6 +12,11 @@ const createUserValidation = [
     .notEmpty().withMessage('Username is required')
     .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
     .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ max: 20 }).withMessage('NPK max 20 digits')
+    .matches(/^[0-9]*$/).withMessage('NPK must be numeric'),
   body('displayName')
     .trim()
     .notEmpty().withMessage('Display name is required')
@@ -48,6 +53,16 @@ const createUserValidation = [
  */
 const updateUserValidation = [
   param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  body('username')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
+    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ max: 20 }).withMessage('NPK max 20 digits')
+    .matches(/^[0-9]*$/).withMessage('NPK must be numeric'),
   body('displayName')
     .optional()
     .trim()
@@ -331,6 +346,7 @@ async function downloadUserTemplate(req, res) {
 
     worksheet.columns = [
       { header: 'Username', key: 'username', width: 20 },
+      { header: 'NPK', key: 'npk', width: 14 },
       { header: 'DisplayName', key: 'displayName', width: 28 },
       { header: 'Email', key: 'email', width: 32 },
       { header: 'Role', key: 'role', width: 18 },
@@ -340,7 +356,8 @@ async function downloadUserTemplate(req, res) {
     ];
 
     worksheet.addRow({
-      username: '2091',
+      username: 'superadmin',
+      npk: '0676',
       displayName: 'Firman',
       email: 'firman@company.co.id',
       role: 'AdminEvent',
@@ -382,3 +399,7 @@ module.exports = {
   toggleLDAPValidation,
   setPasswordValidation
 };
+
+
+
+
