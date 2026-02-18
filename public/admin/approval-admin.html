@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approval Admin - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be loaded by sidebar.js -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Approval Management - Admin Event</h1>
+                </div>
+                <div class="header-right">
+                    <span id="user-display"></span>
+                    <button class="btn btn-secondary" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="respondents">Daftar Responden</button>
+                    <button class="tab-btn" data-tab="propose-takeout">Propose Takeout</button>
+                </div>
+
+                <!-- Tab 1: Daftar Responden -->
+                <div id="tab-respondents" class="tab-content active">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Daftar Responden</h2>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Filters -->
+                            <div class="filter-section">
+                                <div class="filter-row">
+                                    <div class="form-group">
+                                        <label for="filter-survey">Survey</label>
+                                        <select id="filter-survey" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-function">Function</label>
+                                        <select id="filter-function" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-duplicate">Duplicate Filter</label>
+                                        <select id="filter-duplicate" class="form-control">
+                                            <option value="all">All</option>
+                                            <option value="duplicate">Duplicate Only</option>
+                                            <option value="unique">Unique Only</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="action-buttons">
+                                <button id="btn-export-excel" class="btn btn-primary">
+                                    Export to Excel
+                                </button>
+                            </div>
+
+                            <!-- Respondents Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="select-all"></th>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Department</th>
+                                            <th>Application</th>
+                                            <th>Submitted Date</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="respondents-tbody">
+                                        <tr>
+                                            <td colspan="8" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Propose Takeout -->
+                <div id="tab-propose-takeout" class="tab-content">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Propose Takeout</h2>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Filters -->
+                            <div class="filter-section">
+                                <div class="filter-row">
+                                    <div class="form-group">
+                                        <label for="filter-survey">Survey</label>
+                                        <select id="filter-survey" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-function">Function</label>
+                                        <select id="filter-function" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-application">Application</label>
+                                        <select id="filter-application" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-department">Department</label>
+                                        <select id="filter-department" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-rating">Rating</label>
+                                        <select id="filter-rating" class="form-control">
+                                            <option value="">All</option>
+                                            <option value="1">1</option>
+                                            <option value="2">2</option>
+                                            <option value="3">3</option>
+                                            <option value="4">4</option>
+                                            <option value="5">5</option>
+                                            <option value="6">6</option>
+                                            <option value="7">7</option>
+                                            <option value="8">8</option>
+                                            <option value="9">9</option>
+                                            <option value="10">10</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="action-buttons">
+                                <button id="btn-bulk-propose" class="btn btn-warning">
+                                    Bulk Propose Takeout
+                                </button>
+                            </div>
+
+                            <!-- Propose Takeout Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Email</th>
+                                            <th>Department</th>
+                                            <th>Application</th>
+                                            <th colspan="10">Questions (Click score to view details)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="propose-takeout-tbody">
+                                        <tr>
+                                            <td colspan="14" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="info-box">
+                                <p><strong>Instructions:</strong></p>
+                                <ul>
+                                    <li>Check the checkbox for each question you want to propose for takeout</li>
+                                    <li>Click on the score to view comment and takeout reason</li>
+                                    <li>Use bulk propose takeout to propose multiple questions at once</li>
+                                    <li>Status badges show: Active (green), ProposedTakeout (yellow), TakenOut (red)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/approval.js"></script>
+    <script>
+        // Check authentication
+        AuthUtils.checkAuth();
+        
+        // Display user info
+        const user = AuthUtils.getCurrentUser();
+        if (user) {
+            document.getElementById('user-display').textContent = user.displayName || user.username;
+        }
+
+        // Load sidebar
+        if (window.Sidebar) {
+            Sidebar.init();
+        }
+
+        document.getElementById('logout-btn')?.addEventListener('click', () => {
+            AuthUtils.logout();
+        });
+    </script>
+</body>
+</html>

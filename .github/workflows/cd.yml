@@ -1,0 +1,40 @@
+name: CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build (if available)
+        run: npm run build --if-present
+
+      - name: Prepare artifact
+        run: |
+          mkdir -p release
+          cp -r src public package.json server.js release/
+          if [ -f package-lock.json ]; then cp package-lock.json release/; fi
+          if [ -f README.md ]; then cp README.md release/; fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: event-management-release
+          path: release/

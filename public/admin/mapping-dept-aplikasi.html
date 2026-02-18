@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapping Department-Aplikasi - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+    <style>
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .tag-primary {
+            background-color: var(--primary-color);
+            color: white;
+        }
+        .tag-remove {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.25rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0;
+            margin-left: 0.25rem;
+            opacity: 0.8;
+        }
+        .tag-remove:hover {
+            opacity: 1;
+        }
+        .checkbox-item {
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--gray-200);
+        }
+        .checkbox-item:last-child {
+            border-bottom: none;
+        }
+        .checkbox-item label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .checkbox-item input[type="checkbox"] {
+            cursor: pointer;
+        }
+        .checkbox-container {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--gray-300);
+            border-radius: 4px;
+            margin-top: 0.5rem;
+        }
+        .filter-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .filter-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        .filter-group label {
+            display: block;
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be dynamically generated -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Mapping Department-Aplikasi</h1>
+                    <p class="breadcrumb">Dashboard / Mapping / Department-Aplikasi</p>
+                </div>
+                <div class="header-right">
+                    <span class="user-display" id="user-display"></span>
+                    <button class="btn btn-secondary btn-sm" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="content-wrapper">
+                <!-- Action Bar -->
+                <div class="action-bar">
+                    <div class="action-left">
+                        <button class="btn btn-primary" id="add-mapping-btn">
+                            <span class="icon">+</span> Tambah Mapping
+                        </button>
+                        <button class="btn btn-secondary" id="bulk-import-btn">
+                            <span class="icon">📤</span> Import CSV/Excel
+                        </button>
+                        <button class="btn btn-secondary" id="export-btn">
+                            <span class="icon">📥</span> Export CSV
+                        </button>
+                    </div>
+                    <div class="action-right">
+                        <input type="text" class="search-input" id="search-input" placeholder="Cari department atau aplikasi...">
+                    </div>
+                </div>
+
+                <!-- Filter Bar -->
+                <div class="filter-bar">
+                    <div class="filter-group">
+                        <label for="filter-bu">Filter Business Unit</label>
+                        <select id="filter-bu" class="form-control">
+                            <option value="">Semua Business Unit</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-division">Filter Division</label>
+                        <select id="filter-division" class="form-control">
+                            <option value="">Pilih Business Unit dulu</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-department">Filter Department</label>
+                        <select id="filter-department" class="form-control">
+                            <option value="">Pilih Division dulu</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-application">Filter Aplikasi</label>
+                        <select id="filter-application" class="form-control">
+                            <option value="">Semua Aplikasi</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Mapping Table -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Daftar Mapping Department-Aplikasi (Hierarki)</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table" id="mapping-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 20%;">Business Unit</th>
+                                        <th style="width: 20%;">Division</th>
+                                        <th style="width: 20%;">Department</th>
+                                        <th>Aplikasi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mapping-tbody">
+                                    <tr>
+                                        <td colspan="4" class="text-center">Loading...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Mapping Modal -->
+    <div class="modal" id="mapping-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Tambah Mapping Department-Aplikasi</h3>
+                <button class="modal-close" id="mapping-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="mapping-form">
+                    <div class="form-group">
+                        <label for="mapping-bu">Business Unit <span class="required">*</span></label>
+                        <select id="mapping-bu" class="form-control" required>
+                            <option value="">Pilih Business Unit</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mapping-division">Division <span class="required">*</span></label>
+                        <select id="mapping-division" class="form-control" required>
+                            <option value="">Pilih Business Unit dulu</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="mapping-department">Department <span class="required">*</span></label>
+                        <select id="mapping-department" class="form-control" required>
+                            <option value="">Pilih Division dulu</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Aplikasi <span class="required">*</span></label>
+                        <small class="form-text">Pilih satu atau lebih aplikasi</small>
+                        <div class="checkbox-container" id="mapping-applications">
+                            <!-- Checkboxes will be populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="alert alert-error" id="mapping-form-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="mapping-form-success" style="display: none;"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="mapping-cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary">Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Application Modal (for existing department) -->
+    <div class="modal" id="add-app-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Tambah Aplikasi ke Department</h3>
+                <button class="modal-close" id="add-app-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="add-app-form">
+                    <input type="hidden" id="add-app-dept-id">
+                    
+                    <div class="form-group">
+                        <label>Department</label>
+                        <p class="form-text" id="add-app-dept-name"></p>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Aplikasi <span class="required">*</span></label>
+                        <small class="form-text">Pilih satu atau lebih aplikasi</small>
+                        <div class="checkbox-container" id="add-app-applications">
+                            <!-- Checkboxes will be populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="add-app-cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary">Tambah</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Modal -->
+    <div class="modal" id="import-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Mapping dari CSV/Excel</h3>
+                <button class="modal-close" id="import-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="import-form">
+                    <div class="form-group">
+                        <label for="import-file">File CSV/Excel <span class="required">*</span></label>
+                        <input type="file" id="import-file" class="form-control" accept=".csv,.xlsx,.xls" required>
+                        <small class="form-text">Format: DepartmentCode, ApplicationCode</small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>Template CSV/Excel:</strong><br>
+                        Kolom 1: Kode Department<br>
+                        Kolom 2: Kode Aplikasi<br>
+                        <br>
+                        Contoh:<br>
+                        <code>DEPT-IT,SAP-ERP</code><br>
+                        <code>DEPT-IT,ORACLE-DB</code>
+                    </div>
+
+                    <div class="alert alert-error" id="import-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="import-success" style="display: none;"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="import-cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary">Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/mapping.js"></script>
+    <script>
+        // Initialize page
+        (async function() {
+            // Check authentication
+            const user = await AuthUtils.redirectIfNotAuthenticated();
+            if (!user) return;
+
+            // Check if user has access (Super Admin or Admin Event)
+            if (!AuthUtils.hasAnyRole(['SuperAdmin', 'AdminEvent'])) {
+                alert('Akses ditolak. Halaman ini hanya untuk Super Admin dan Admin Event.');
+                window.location.href = 'dashboard';
+                return;
+            }
+
+            // Display user info
+            document.getElementById('user-display').textContent = AuthUtils.getUserDisplayName();
+
+            // Initialize sidebar
+            Sidebar.init();
+
+            // Initialize mapping module
+            Mapping.initAppDeptMapping();
+
+            // Logout handler
+            document.getElementById('logout-btn').addEventListener('click', () => {
+                AuthUtils.logout();
+            });
+
+            // Add application modal handlers
+            document.getElementById('add-app-modal-close')?.addEventListener('click', () => {
+                Mapping.hideAddApplicationModal();
+            });
+            document.getElementById('add-app-cancel-btn')?.addEventListener('click', () => {
+                Mapping.hideAddApplicationModal();
+            });
+            document.getElementById('add-app-form')?.addEventListener('submit', (event) => {
+                event.preventDefault();
+                Mapping.saveAdditionalDeptApplications();
+            });
+        })();
+    </script>
+</body>
+</html>
+

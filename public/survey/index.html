@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survey CSI Portal</title>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+    <link rel="stylesheet" href="css/survey.css">
+</head>
+<body>
+    <!-- Loading State -->
+    <div id="loading-screen" class="loading-screen">
+        <div class="spinner"></div>
+        <p>Memuat survey...</p>
+    </div>
+
+    <!-- Error State -->
+    <div id="error-screen" class="error-screen" style="display: none;">
+        <div class="error-content">
+            <div class="error-icon">⚠️</div>
+            <h2>Terjadi Kesalahan</h2>
+            <p id="error-message"></p>
+            <button onclick="location.reload()" class="btn btn-primary">Muat Ulang</button>
+        </div>
+    </div>
+
+    <!-- Survey Container -->
+    <div id="survey-container" class="survey-container" style="display: none;">
+        <!-- Progress Bar (shown if enabled) -->
+        <div id="progress-bar-container" class="progress-bar-container" style="display: none;">
+            <div class="progress-bar">
+                <div id="progress-bar-fill" class="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-text">
+                <span id="progress-current">1</span> dari <span id="progress-total">5</span>
+            </div>
+        </div>
+
+        <!-- Survey Content Area -->
+        <div id="survey-content" class="survey-content">
+            <!-- Dynamic content will be rendered here -->
+        </div>
+
+        <!-- Navigation Buttons -->
+        <div id="navigation-buttons" class="navigation-buttons">
+            <button id="btn-prev" class="btn btn-secondary" style="display: none;">
+                ← Sebelumnya
+            </button>
+            <button id="btn-next" class="btn btn-primary">
+                Selanjutnya →
+            </button>
+            <button id="btn-submit" class="btn btn-success" style="display: none;">
+                Kirim Survey
+            </button>
+        </div>
+    </div>
+
+    <!-- Success Screen -->
+    <div id="success-screen" class="success-screen" style="display: none;">
+        <div class="success-content">
+            <div class="success-icon">✓</div>
+            <h2>Terima Kasih!</h2>
+            <p>Survey Anda telah berhasil dikirim.</p>
+            <p class="success-message">Feedback Anda sangat berharga bagi kami untuk meningkatkan layanan IT.</p>
+        </div>
+    </div>
+
+    <!-- Signature Canvas Modal (for signature questions) -->
+    <div id="signature-modal" class="modal" style="display: none;">
+        <div class="modal-content signature-modal-content">
+            <div class="modal-header">
+                <h3>Tanda Tangan</h3>
+                <button class="modal-close" onclick="SurveyApp.closeSignatureModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <canvas id="signature-canvas" width="600" height="300"></canvas>
+                <div class="signature-actions">
+                    <button class="btn btn-secondary" onclick="SurveyApp.clearSignature()">Hapus</button>
+                    <button class="btn btn-primary" onclick="SurveyApp.saveSignature()">Simpan</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/survey-renderer.js"></script>
+    <script src="js/survey-form.js"></script>
+</body>
+</html>

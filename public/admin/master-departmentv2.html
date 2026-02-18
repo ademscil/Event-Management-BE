@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Department - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <aside class="sidebar" id="sidebar"></aside>
+        <main class="main-content">
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Master Department</h1>
+                    <p class="breadcrumb">Dashboard / Master Data / Department</p>
+                </div>
+                <div class="header-right">
+                    <span class="user-display" id="user-display"></span>
+                    <button class="btn btn-secondary btn-sm" id="logout-btn">Logout</button>
+                </div>
+            </header>
+            <div class="content-wrapper">
+                <div class="action-bar">
+                    <div class="action-left">
+                        <button class="btn btn-primary" id="add-dept-btn">
+                            <span class="icon">+</span> Tambah Department
+                        </button>
+                        <button class="btn btn-secondary" id="bulk-import-btn">
+                            <span class="icon">📤</span> Import Excel
+                        </button>
+                    </div>
+                    <div class="action-right">
+                        <input type="text" class="search-input" id="search-input" placeholder="Cari department...">
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Daftar Department</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table" id="dept-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kode</th>
+                                        <th>Nama</th>
+                                        <th>Division</th>
+                                        <th>Business Unit</th>
+                                        <th>Status</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="dept-tbody">
+                                    <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal" id="dept-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Tambah Department</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="dept-form">
+                    <input type="hidden" id="dept-id">
+                    <div class="form-group">
+                        <label for="business-unit">Business Unit <span class="required">*</span></label>
+                        <select id="business-unit" class="form-control" required>
+                            <option value="">Pilih Business Unit</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="division">Division <span class="required">*</span></label>
+                        <select id="division" class="form-control" required>
+                            <option value="">Pilih Division</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="dept-code">Kode <span class="required">*</span></label>
+                        <input type="text" id="dept-code" class="form-control" required>
+                        <small class="form-text">2-20 karakter, hanya huruf, angka, dan tanda hubung</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="dept-name">Nama <span class="required">*</span></label>
+                        <input type="text" id="dept-name" class="form-control" required>
+                    </div>
+                    <div class="alert alert-error" id="form-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="form-success" style="display: none;"></div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary">Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="import-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Department dari Excel</h3>
+                <button class="modal-close" id="import-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="import-form">
+                    <div class="form-group">
+                        <label for="import-file">File Excel <span class="required">*</span></label>
+                        <input type="file" id="import-file" class="form-control" accept=".xlsx,.xls" required>
+                        <small class="form-text">Format: Kode BU, Kode Division, Kode Dept, Nama Dept</small>
+                    </div>
+                    <div class="alert alert-info">
+                        <strong>Template Excel:</strong><br>
+                        Kolom 1: Kode Business Unit<br>
+                        Kolom 2: Kode Division<br>
+                        Kolom 3: Kode Department (2-20 karakter)<br>
+                        Kolom 4: Nama Department (1-200 karakter)
+                    </div>
+                    <div class="alert alert-error" id="import-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="import-success" style="display: none;"></div>
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="import-cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary">Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" id="delete-modal">
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>Konfirmasi Hapus</h3>
+                <button class="modal-close" id="delete-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Apakah Anda yakin ingin menghapus department ini?</p>
+                <p class="text-muted" id="delete-dept-name"></p>
+                <div class="alert alert-warning">
+                    <strong>Perhatian:</strong> Department tidak dapat dihapus jika masih memiliki mapping atau response terkait.
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="delete-cancel-btn">Batal</button>
+                    <button type="button" class="btn btn-danger" id="delete-confirm-btn">Hapus</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/master.js"></script>
+    <script>
+        (async function() {
+            const user = await AuthUtils.redirectIfNotAuthenticated();
+            if (!user) return;
+            if (!AuthUtils.hasAnyRole(['SuperAdmin', 'AdminEvent'])) {
+                alert('Akses ditolak.');
+                window.location.href = 'dashboard';
+                return;
+            }
+            document.getElementById('user-display').textContent = AuthUtils.getUserDisplayName();
+            Sidebar.init();
+            MasterData.initDepartments();
+            document.getElementById('logout-btn').addEventListener('click', async () => {
+                await Auth.logout();
+                window.location.href = 'login';
+            });
+        })();
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Business Unit - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be dynamically generated -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Master Business Unit</h1>
+                    <p class="breadcrumb">Dashboard / Master Data / Business Unit</p>
+                </div>
+                <div class="header-right">
+                    <span class="user-display" id="user-display"></span>
+                    <button class="btn btn-secondary btn-sm" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="content-wrapper">
+                <!-- Action Bar -->
+                <div class="action-bar">
+                    <div class="action-left">
+                        <button class="btn btn-primary" id="add-bu-btn">
+                            <span class="icon">+</span> Tambah Business Unit
+                        </button>
+                        <button class="btn btn-secondary" id="bulk-import-btn">
+                            <span class="icon">📤</span> Import Excel
+                        </button>
+                    </div>
+                    <div class="action-right">
+                        <input type="text" class="search-input" id="search-input" placeholder="Cari business unit...">
+                    </div>
+                </div>
+
+                <!-- Business Units Table -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <h3>Daftar Business Unit</h3>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table" id="bu-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kode</th>
+                                        <th>Nama</th>
+                                        <th>Status</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bu-tbody">
+                                    <tr>
+                                        <td colspan="4" class="text-center">Loading...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add/Edit BU Modal -->
+    <div class="modal" id="bu-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Tambah Business Unit</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="bu-form">
+                    <input type="hidden" id="bu-id">
+                    
+                    <div class="form-group">
+                        <label for="bu-code">Kode <span class="required">*</span></label>
+                        <input type="text" id="bu-code" class="form-control" required>
+                        <small class="form-text">2-20 karakter, hanya huruf, angka, dan tanda hubung</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bu-name">Nama <span class="required">*</span></label>
+                        <input type="text" id="bu-name" class="form-control" required>
+                    </div>
+
+                    <div class="alert alert-error" id="form-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="form-success" style="display: none;"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary" id="submit-btn">Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Import Modal -->
+    <div class="modal" id="import-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Import Business Unit dari Excel</h3>
+                <button class="modal-close" id="import-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="import-form">
+                    <div class="form-group">
+                        <label for="import-file">File Excel <span class="required">*</span></label>
+                        <input type="file" id="import-file" class="form-control" accept=".xlsx,.xls" required>
+                        <small class="form-text">Format: Kode, Nama</small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <strong>Template Excel:</strong><br>
+                        Kolom 1: Kode (2-20 karakter)<br>
+                        Kolom 2: Nama (1-200 karakter)
+                    </div>
+
+                    <div class="alert alert-error" id="import-error" style="display: none;"></div>
+                    <div class="alert alert-success" id="import-success" style="display: none;"></div>
+
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" id="import-cancel-btn">Batal</button>
+                        <button type="submit" class="btn btn-primary" id="import-submit-btn">Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal" id="delete-modal">
+        <div class="modal-content modal-sm">
+            <div class="modal-header">
+                <h3>Konfirmasi Hapus</h3>
+                <button class="modal-close" id="delete-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Apakah Anda yakin ingin menghapus business unit ini?</p>
+                <p class="text-muted" id="delete-bu-name"></p>
+                <div class="alert alert-warning">
+                    <strong>Perhatian:</strong> Business unit tidak dapat dihapus jika masih memiliki division terkait.
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" id="delete-cancel-btn">Batal</button>
+                    <button type="button" class="btn btn-danger" id="delete-confirm-btn">Hapus</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/master.js"></script>
+    <script>
+        // Initialize page
+        (async function() {
+            // Check authentication
+            const user = await AuthUtils.redirectIfNotAuthenticated();
+            if (!user) return;
+
+            // Check if user has access (Super Admin or Admin Event)
+            if (!AuthUtils.hasAnyRole(['SuperAdmin', 'AdminEvent'])) {
+                alert('Akses ditolak. Halaman ini hanya untuk Super Admin dan Admin Event.');
+                window.location.href = 'dashboard';
+                return;
+            }
+
+            // Display user info
+            document.getElementById('user-display').textContent = AuthUtils.getUserDisplayName();
+
+            // Initialize sidebar
+            Sidebar.init();
+
+            // Initialize master data module for business units
+            MasterData.initBusinessUnits();
+
+            // Logout handler
+            document.getElementById('logout-btn').addEventListener('click', async () => {
+                await Auth.logout();
+                window.location.href = 'login';
+            });
+        })();
+    </script>
+</body>
+</html>
+

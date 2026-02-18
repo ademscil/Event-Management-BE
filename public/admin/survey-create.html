@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Survey Builder - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+    <style>
+        .builder-container {
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            gap: 20px;
+            height: calc(100vh - var(--header-height) - 40px);
+        }
+
+        .builder-sidebar {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            overflow-y: auto;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .builder-canvas {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-xl);
+            overflow-y: auto;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .builder-properties {
+            background: white;
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-lg);
+            overflow-y: auto;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .question-type-btn {
+            width: 100%;
+            margin-bottom: var(--spacing-sm);
+            text-align: left;
+            padding: var(--spacing-md);
+            background: var(--gray-50);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .question-type-btn:hover {
+            background: var(--gray-100);
+            border-color: var(--primary-color);
+        }
+
+        .question-item {
+            background: var(--gray-50);
+            border: 2px solid var(--gray-200);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-md);
+            cursor: move;
+            position: relative;
+        }
+
+        .question-item.selected {
+            border-color: var(--primary-color);
+            background: #eff6ff;
+        }
+
+        .question-item.dragging {
+            opacity: 0.5;
+        }
+
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .drag-handle {
+            cursor: move;
+            color: var(--gray-400);
+            font-size: 20px;
+        }
+
+        .question-actions {
+            display: flex;
+            gap: var(--spacing-xs);
+        }
+
+        .page-tabs {
+            display: flex;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-lg);
+            border-bottom: 2px solid var(--gray-200);
+        }
+
+        .page-tab {
+            padding: var(--spacing-sm) var(--spacing-lg);
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--gray-600);
+        }
+
+        .page-tab.active {
+            color: var(--primary-color);
+            border-bottom-color: var(--primary-color);
+        }
+
+        .page-tab .remove-page {
+            margin-left: var(--spacing-xs);
+            color: var(--danger-color);
+            cursor: pointer;
+        }
+
+        .image-preview {
+            max-width: 200px;
+            max-height: 200px;
+            margin-top: var(--spacing-sm);
+            border-radius: var(--radius-md);
+        }
+
+        .color-picker-group {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+        }
+
+        .color-picker-group input[type="color"] {
+            width: 50px;
+            height: 40px;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+        }
+
+        .brand-preview {
+            background: var(--gray-100);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-xl);
+            margin-top: var(--spacing-md);
+            text-align: center;
+        }
+
+        .brand-preview img {
+            max-width: 150px;
+            max-height: 80px;
+            margin-bottom: var(--spacing-md);
+        }
+
+        .signature-canvas-container {
+            border: 2px dashed var(--gray-300);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md);
+            margin-top: var(--spacing-sm);
+        }
+
+        .signature-canvas {
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-sm);
+            cursor: crosshair;
+            display: block;
+            width: 100%;
+        }
+
+        .option-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+            padding: var(--spacing-sm);
+            background: var(--gray-50);
+            border-radius: var(--radius-md);
+        }
+
+        .option-item input {
+            flex: 1;
+        }
+
+        .option-image-preview {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: var(--radius-sm);
+        }
+
+        .matrix-row-item {
+            display: flex;
+            align-items: center;
+            gap: var(--spacing-sm);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .matrix-row-item input {
+            flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be dynamically generated -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Survey Builder</h1>
+                    <p class="breadcrumb">Dashboard / Survey Management / Builder</p>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-secondary btn-sm" id="back-btn">← Back to Event Management</button>
+                    <button class="btn btn-secondary btn-sm" id="preview-btn">Preview</button>
+                    <button class="btn btn-secondary btn-sm" id="save-draft-btn">Save Draft</button>
+                    <button class="btn btn-primary btn-sm" id="publish-btn">Publish</button>
+                    <span class="user-display" id="user-display"></span>
+                    <button class="btn btn-secondary btn-sm" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Builder Content -->
+            <div class="content-wrapper">
+                <div class="builder-container">
+                    <!-- Left Sidebar: Question Types -->
+                    <div class="builder-sidebar">
+                        <h3 style="margin-bottom: var(--spacing-lg);">Question Types</h3>
+                        <button class="question-type-btn" data-type="HeroCover">
+                            <strong>Hero Cover</strong><br>
+                            <small>Title & subtitle</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Text">
+                            <strong>Text</strong><br>
+                            <small>Short/long answer</small>
+                        </button>
+                        <button class="question-type-btn" data-type="MultipleChoice">
+                            <strong>Multiple Choice</strong><br>
+                            <small>Single selection</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Checkbox">
+                            <strong>Checkbox</strong><br>
+                            <small>Multiple selection</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Dropdown">
+                            <strong>Dropdown</strong><br>
+                            <small>Select from list</small>
+                        </button>
+                        <button class="question-type-btn" data-type="MatrixLikert">
+                            <strong>Matrix Likert</strong><br>
+                            <small>1-10 scale grid</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Rating">
+                            <strong>Rating</strong><br>
+                            <small>Star/number rating</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Date">
+                            <strong>Date</strong><br>
+                            <small>Date picker</small>
+                        </button>
+                        <button class="question-type-btn" data-type="Signature">
+                            <strong>Signature</strong><br>
+                            <small>Canvas signature</small>
+                        </button>
+                    </div>
+
+                    <!-- Center: Canvas -->
+                    <div class="builder-canvas">
+                        <!-- Survey Details -->
+                        <div class="panel" style="margin-bottom: var(--spacing-xl);">
+                            <div class="panel-header">
+                                <h3>Survey Details</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="form-group">
+                                    <label>Title <span class="required">*</span></label>
+                                    <input type="text" id="survey-title" class="form-control" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Description</label>
+                                    <textarea id="survey-description" class="form-control" rows="3"></textarea>
+                                </div>
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label>Start Date <span class="required">*</span></label>
+                                        <input type="date" id="survey-start-date" class="form-control" required>
+                                    </div>
+                                    <div class="form-group">
+                                        <label>End Date <span class="required">*</span></label>
+                                        <input type="date" id="survey-end-date" class="form-control" required>
+                                    </div>
+                                </div>
+                                <div class="grid-2">
+                                    <div class="form-group">
+                                        <label>Target Respondents</label>
+                                        <input type="number" id="survey-target-respondents" class="form-control">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Target Score</label>
+                                        <input type="number" id="survey-target-score" class="form-control" step="0.1">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Theme Configuration -->
+                        <div class="panel" style="margin-bottom: var(--spacing-xl);">
+                            <div class="panel-header">
+                                <h3>Theme & Branding</h3>
+                            </div>
+                            <div class="panel-body">
+                                <div class="form-group">
+                                    <label>Hero Image</label>
+                                    <input type="file" id="hero-image-upload" class="form-control" accept="image/*">
+                                    <img id="hero-image-preview" class="image-preview" style="display: none;">
+                                </div>
+                                <div class="form-group">
+                                    <label>Logo</label>
+                                    <input type="file" id="logo-upload" class="form-control" accept="image/*">
+                                    <img id="logo-preview" class="image-preview" style="display: none;">
+                                </div>
+                                <div class="form-group">
+                                    <label>Background Color</label>
+                                    <div class="color-picker-group">
+                                        <input type="color" id="bg-color-picker" value="#ffffff">
+                                        <input type="text" id="bg-color-text" class="form-control" value="#ffffff" style="flex: 1;">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Background Image</label>
+                                    <input type="file" id="bg-image-upload" class="form-control" accept="image/*">
+                                    <img id="bg-image-preview" class="image-preview" style="display: none;">
+                                </div>
+                                <div class="form-group">
+                                    <label>Font Family</label>
+                                    <select id="font-family" class="form-control">
+                                        <option value="Figtree">Figtree</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="Helvetica">Helvetica</option>
+                                        <option value="Georgia">Georgia</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="show-progress-bar"> Show Progress Bar
+                                    </label>
+                                </div>
+                                <div class="form-group">
+                                    <label>
+                                        <input type="checkbox" id="show-page-numbers"> Show Page Numbers
+                                    </label>
+                                </div>
+                                <div class="brand-preview" id="brand-preview">
+                                    <img id="brand-preview-logo" src="" alt="Logo" style="display: none;">
+                                    <p style="font-family: var(--preview-font, 'Figtree');">Preview Text</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Page Tabs -->
+                        <div class="page-tabs" id="page-tabs">
+                            <button class="page-tab active" data-page="1">Page 1</button>
+                            <button class="page-tab" id="add-page-btn">+ Add Page</button>
+                        </div>
+
+                        <!-- Questions Container -->
+                        <div id="questions-container">
+                            <p class="text-muted text-center">Click a question type to add it to the survey</p>
+                        </div>
+                    </div>
+
+                    <!-- Right Sidebar: Properties -->
+                    <div class="builder-properties">
+                        <h3 style="margin-bottom: var(--spacing-lg);">Properties</h3>
+                        <div id="properties-panel">
+                            <p class="text-muted">Select a question to edit its properties</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="modal" id="preview-modal">
+        <div class="modal-content modal-lg">
+            <div class="modal-header">
+                <h3>Survey Preview</h3>
+                <button class="modal-close" id="preview-close">&times;</button>
+            </div>
+            <div class="modal-body" id="preview-content">
+                <!-- Preview will be rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/signature-canvas.js"></script>
+    <script src="js/survey-builder.js"></script>
+    <script>
+        // Initialize page
+        (async function() {
+            // Check authentication
+            const user = await window.AuthUtils.redirectIfNotAuthenticated();
+            if (!user) return;
+
+            // Initialize sidebar
+            if (window.Sidebar) {
+                window.Sidebar.init();
+            }
+
+            // Display user info
+            const userDisplay = document.getElementById('user-display');
+            if (userDisplay) {
+                userDisplay.textContent = window.AuthUtils.getUserDisplayName();
+            }
+
+            // Logout handler
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', async () => {
+                    await window.Auth.logout();
+                    window.location.href = 'login';
+                });
+            }
+
+            // Initialize survey builder
+            if (window.SurveyBuilder) {
+                window.SurveyBuilder.init();
+            }
+        })();
+    </script>
+</body>
+</html>
+

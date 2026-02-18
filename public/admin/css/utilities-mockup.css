@@ -1,0 +1,84 @@
+/* Utility Classes */
+
+/* Logo Link */
+.logo a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Text Alignment */
+.text-center {
+  text-align: center;
+}
+
+/* Required Asterisk */
+.text-danger {
+  color: #dc2626;
+}
+
+/* Flex */
+.flex-1 {
+  flex: 1;
+}
+
+/* Grid */
+.grid-col-full {
+  grid-column: 1 / -1;
+}
+
+/* Spacing */
+.mt-6 { margin-top: 6px; }
+.mt-10 { margin-top: 10px; }
+.mt-12 { margin-top: 12px; }
+.mb-6 { margin-bottom: 6px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-12 { margin-bottom: 12px; }
+.p-8-2-2 { padding: 8px 2px 2px; }
+.p-8-0-0 { padding: 8px 0 0; }
+.p-20-10 { padding: 20px 10px; }
+.pr-8 { padding-right: 8px; }
+.p-0 { padding: 0; }
+
+/* Font Sizes */
+.text-xs { font-size: 11px; }
+.text-sm { font-size: 12px; }
+.text-md { font-size: 16px; }
+
+/* Font Weight */
+.font-bold { font-weight: 700; }
+
+/* Min Height */
+.min-h-50 { min-height: 50px; }
+
+/* Border */
+.border-none { border: none; }
+.border-left-grid { border-left: 1px solid var(--grid); }
+
+/* Width */
+.w-36 { width: 36%; }
+
+/* Background Image */
+.bg-survey-hero {
+  background-image: url('https://surveymonkey-assets.s3.amazonaws.com/survey/415080379/46116e09-38a1-4520-ad7a-67a6b3f2b821.jpg');
+}
+
+/* Gradients */
+.gradient-blue { background: linear-gradient(135deg, #dbeafe, #eff6ff); }
+.gradient-green { background: linear-gradient(135deg, #dcfce7, #ecfdf3); }
+.gradient-yellow { background: linear-gradient(135deg, #fef3c7, #fff7ed); }
+
+/* Chart Positions */
+.chart-pos-0 { top: 0%; }
+.chart-pos-11 { top: 11.1%; }
+.chart-pos-22 { top: 22.2%; }
+.chart-pos-33 { top: 33.3%; }
+.chart-pos-44 { top: 44.4%; }
+.chart-pos-55 { top: 55.5%; }
+.chart-pos-66 { top: 66.6%; }
+.chart-pos-77 { top: 77.7%; }
+.chart-pos-88 { top: 88.8%; }
+
+/* Colors */
+.color-muted { color: #6b7280; }
+.bg-brown { background: #d28f2f; }
+.bg-green { background: var(--green); }

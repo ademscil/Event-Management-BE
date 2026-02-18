@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approval IT Lead - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be loaded by sidebar.js -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Approval Management - IT Lead</h1>
+                </div>
+                <div class="header-right">
+                    <span id="user-display"></span>
+                    <button class="btn btn-secondary" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="pending-approvals">Propose Takeout</button>
+                    <button class="tab-btn" data-tab="best-comments-feedback">Best Comments Feedback</button>
+                </div>
+
+                <!-- Tab 1: Propose Takeout (Pending Approvals) -->
+                <div id="tab-pending-approvals" class="tab-content active">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Pending Approvals</h2>
+                            <p class="text-muted">Review and approve/reject proposed takeouts for your assigned functions</p>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Filters -->
+                            <div class="filter-section">
+                                <div class="filter-row">
+                                    <div class="form-group">
+                                        <label for="filter-survey">Survey</label>
+                                        <select id="filter-survey" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-function">Function</label>
+                                        <select id="filter-function" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="action-buttons">
+                                <button id="btn-bulk-approve" class="btn btn-success">
+                                    Bulk Approve
+                                </button>
+                                <button id="btn-bulk-reject" class="btn btn-danger">
+                                    Bulk Reject
+                                </button>
+                            </div>
+
+                            <!-- Pending Approvals Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="select-all"></th>
+                                            <th>Respondent</th>
+                                            <th>Question</th>
+                                            <th>Score</th>
+                                            <th>Proposal Reason</th>
+                                            <th>Proposed Date</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pending-approvals-tbody">
+                                        <tr>
+                                            <td colspan="7" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <!-- Approval History -->
+                            <div class="panel mt-4">
+                                <div class="panel-header">
+                                    <h3>Approval History</h3>
+                                </div>
+                                <div class="panel-body">
+                                    <div class="table-responsive">
+                                        <table class="table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Date</th>
+                                                    <th>Respondent</th>
+                                                    <th>Question</th>
+                                                    <th>Decision</th>
+                                                    <th>Reason</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="approval-history-tbody">
+                                                <tr>
+                                                    <td colspan="5" class="text-center">No history available</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="info-box">
+                                <p><strong>Instructions:</strong></p>
+                                <ul>
+                                    <li>Review proposed takeouts filtered by your assigned functions</li>
+                                    <li>Approve or reject each proposal individually or in bulk</li>
+                                    <li>Reason is REQUIRED for rejection, optional for approval</li>
+                                    <li>Check the checkbox to select multiple items for bulk actions</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: Best Comments Feedback -->
+                <div id="tab-best-comments-feedback" class="tab-content">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>Best Comments Feedback</h2>
+                            <p class="text-muted">Provide feedback on best comments selected by Admin Event</p>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Best Comments Feedback Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Survey</th>
+                                            <th>Function</th>
+                                            <th>Comment</th>
+                                            <th>Your Feedback</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="best-comments-feedback-tbody">
+                                        <tr>
+                                            <td colspan="5" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="info-box">
+                                <p><strong>Instructions:</strong></p>
+                                <ul>
+                                    <li>Review best comments selected by Admin Event</li>
+                                    <li>Provide constructive feedback for each comment</li>
+                                    <li>Your feedback will be visible to Department Heads</li>
+                                    <li>Click Submit to save your feedback</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Approve Modal -->
+    <div id="approve-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Approve Takeout</h3>
+                <button class="modal-close" id="approve-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="approve-reason">Reason (Optional)</label>
+                    <textarea id="approve-reason" class="form-control" rows="3" placeholder="Enter reason for approval (optional)"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="approve-modal-cancel">Cancel</button>
+                <button class="btn btn-success" id="approve-modal-submit">Approve</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reject Modal -->
+    <div id="reject-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Reject Takeout</h3>
+                <button class="modal-close" id="reject-modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="reject-reason">Reason (Required) <span class="text-danger">*</span></label>
+                    <textarea id="reject-reason" class="form-control" rows="3" placeholder="Enter reason for rejection (required)" required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="reject-modal-cancel">Cancel</button>
+                <button class="btn btn-danger" id="reject-modal-submit">Reject</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/approval.js"></script>
+    <script>
+        // IT Lead specific approval functionality
+        const ITLeadApproval = {
+            currentAction: null,
+            currentResponseId: null,
+            currentQuestionId: null,
+
+            approveQuestion: function(responseId, questionId) {
+                this.currentAction = 'approve';
+                this.currentResponseId = responseId;
+                this.currentQuestionId = questionId;
+                document.getElementById('approve-modal').style.display = 'block';
+            },
+
+            rejectQuestion: function(responseId, questionId) {
+                this.currentAction = 'reject';
+                this.currentResponseId = responseId;
+                this.currentQuestionId = questionId;
+                document.getElementById('reject-modal').style.display = 'block';
+            },
+
+            confirmApprove: async function() {
+                const reason = document.getElementById('approve-reason').value;
+                
+                try {
+                    await ApprovalManager.apiCall('/approvals/approve', 'POST', {
+                        responseId: this.currentResponseId,
+                        questionId: this.currentQuestionId,
+                        reason: reason || null
+                    });
+
+                    ApprovalManager.showSuccess('Approved successfully');
+                    document.getElementById('approve-modal').style.display = 'none';
+                    document.getElementById('approve-reason').value = '';
+                    ApprovalManager.loadPendingApprovals();
+                } catch (error) {
+                    console.error('Error approving:', error);
+                    ApprovalManager.showError('Failed to approve');
+                }
+            },
+
+            confirmReject: async function() {
+                const reason = document.getElementById('reject-reason').value;
+                
+                if (!reason || reason.trim() === '') {
+                    ApprovalManager.showError('Reason is required for rejection');
+                    return;
+                }
+
+                try {
+                    await ApprovalManager.apiCall('/approvals/reject', 'POST', {
+                        responseId: this.currentResponseId,
+                        questionId: this.currentQuestionId,
+                        reason: reason
+                    });
+
+                    ApprovalManager.showSuccess('Rejected successfully');
+                    document.getElementById('reject-modal').style.display = 'none';
+                    document.getElementById('reject-reason').value = '';
+                    ApprovalManager.loadPendingApprovals();
+                } catch (error) {
+                    console.error('Error rejecting:', error);
+                    ApprovalManager.showError('Failed to reject');
+                }
+            }
+        };
+
+        // Override approve/reject functions to use modals
+        ApprovalManager.approveQuestion = function(responseId, questionId) {
+            ITLeadApproval.approveQuestion(responseId, questionId);
+        };
+
+        ApprovalManager.rejectQuestion = function(responseId, questionId) {
+            ITLeadApproval.rejectQuestion(responseId, questionId);
+        };
+
+        // Check authentication
+        AuthUtils.checkAuth();
+        
+        // Display user info
+        const user = AuthUtils.getCurrentUser();
+        if (user) {
+            document.getElementById('user-display').textContent = user.displayName || user.username;
+        }
+
+        // Load sidebar
+        if (window.Sidebar) {
+            Sidebar.init();
+        }
+
+        document.getElementById('logout-btn')?.addEventListener('click', () => {
+            AuthUtils.logout();
+        });
+
+        const approveModal = document.getElementById('approve-modal');
+        const rejectModal = document.getElementById('reject-modal');
+
+        document.getElementById('approve-modal-close')?.addEventListener('click', () => {
+            if (approveModal) approveModal.style.display = 'none';
+        });
+        document.getElementById('approve-modal-cancel')?.addEventListener('click', () => {
+            if (approveModal) approveModal.style.display = 'none';
+        });
+        document.getElementById('approve-modal-submit')?.addEventListener('click', () => {
+            ITLeadApproval.confirmApprove();
+        });
+
+        document.getElementById('reject-modal-close')?.addEventListener('click', () => {
+            if (rejectModal) rejectModal.style.display = 'none';
+        });
+        document.getElementById('reject-modal-cancel')?.addEventListener('click', () => {
+            if (rejectModal) rejectModal.style.display = 'none';
+        });
+        document.getElementById('reject-modal-submit')?.addEventListener('click', () => {
+            ITLeadApproval.confirmReject();
+        });
+
+        // Load pending approvals by default
+        ApprovalManager.switchTab('pending-approvals');
+    </script>
+</body>
+</html>

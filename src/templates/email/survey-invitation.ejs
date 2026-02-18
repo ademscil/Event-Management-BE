@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= surveyTitle %></title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #2c3e50;
+            margin: 0 0 10px 0;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .survey-info {
+            background-color: #f8f9fa;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .survey-info p {
+            margin: 5px 0;
+        }
+        .cta-button {
+            display: inline-block;
+            padding: 12px 30px;
+            background-color: #007bff;
+            color: #ffffff;
+            text-decoration: none;
+            border-radius: 5px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .cta-button:hover {
+            background-color: #0056b3;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+        <% if (embedCover && heroCoverUrl) { %>
+        .hero-cover {
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+            margin-bottom: 20px;
+            border-radius: 8px;
+        }
+        <% } %>
+    </style>
+</head>
+<body>
+    <div class="container">
+        <% if (embedCover && heroCoverUrl) { %>
+        <img src="<%= heroCoverUrl %>" alt="Survey Cover" class="hero-cover">
+        <% } %>
+        
+        <div class="header">
+            <h1><%= surveyTitle %></h1>
+        </div>
+        
+        <div class="content">
+            <p>Kepada Yth. <strong><%= recipientName %></strong>,</p>
+            
+            <p><%= surveyDescription %></p>
+            
+            <div class="survey-info">
+                <p><strong>Periode Survey:</strong> <%= startDate %> - <%= endDate %></p>
+                <% if (targetRespondents) { %>
+                <p><strong>Target Responden:</strong> <%= targetRespondents %></p>
+                <% } %>
+            </div>
+            
+            <p>Partisipasi Anda sangat penting untuk membantu kami meningkatkan kualitas layanan IT. Survey ini hanya membutuhkan waktu beberapa menit untuk diselesaikan.</p>
+            
+            <p style="text-align: center; margin: 30px 0;">
+                <a href="<%= surveyLink %>" class="cta-button">Mulai Survey</a>
+            </p>
+            
+            <p style="font-size: 14px; color: #666;">
+                Atau salin dan tempel link berikut di browser Anda:<br>
+                <a href="<%= surveyLink %>"><%= surveyLink %></a>
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p>Email ini dikirim secara otomatis oleh CSI Portal - PT Astra Otoparts Tbk</p>
+            <p>Mohon tidak membalas email ini.</p>
+        </div>
+    </div>
+</body>
+</html>

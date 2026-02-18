@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+.env.local
+.env.*.local
+# Keep one safe environment template only
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+public/uploads/
+
+# Test coverage
+coverage/
+
+# IDE
+.vscode/
+.idea/
+.kiro/
+*.swp
+*.swo
+.tmp-backend-dev.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build
+dist/
+build/

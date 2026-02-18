@@ -1,0 +1,176 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Admin Dashboard - IT Survey</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link rel="stylesheet" href="css/admin-mockup.css">
+  <link rel="stylesheet" href="css/utilities-mockup.css">
+  <script src="js/auth.js"></script>
+  <script src="js/mockup-auth-bridge.js"></script>
+  <script src="js/mockup-dashboard.js"></script>
+</head>
+<body>
+
+  <header class="admin-header">
+    <div class="logo">
+      <a href="dashboard">
+        <img src="/assets/img/logo.png" alt="Logo">
+        <span>IT Survey Admin</span>
+      </a>
+    </div>
+    <div class="user-info" style="position: relative;">
+      <div class="user-dropdown" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <span id="user-display">Loading...</span>
+        <span style="font-size: 10px;">&#9662;</span>
+      </div>
+      <div id="user-dropdown-menu" style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #d1d5db; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 120px; z-index: 1000; margin-top: 4px;">
+        <div class="logout-action" style="padding: 8px 12px; cursor: pointer; font-size: 12px; color: #374151; transition: background-color 0.2s;">Logout</div>
+      </div>
+    </div>
+    <script>
+      // Ensure logout functions are available immediately
+      window.logoutUser = async function() {
+        if (window.Auth && typeof window.Auth.logout === "function") {
+          await window.Auth.logout();
+        }
+        localStorage.removeItem("loggedIn");
+        localStorage.removeItem("username");
+        localStorage.removeItem("userRole");
+        localStorage.removeItem("userName");
+        window.location.href = "login";
+      };
+      
+      window.toggleUserDropdown = function(event) {
+        if (event) event.stopPropagation();
+        const menu = document.getElementById('user-dropdown-menu');
+        if (menu) {
+          menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        }
+      };
+      
+      // Close dropdown when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!e.target.closest('.user-info')) {
+          const menu = document.getElementById('user-dropdown-menu');
+          if (menu) {
+            menu.style.display = 'none';
+          }
+        }
+      });
+    </script>
+  </header>
+
+  <div class="admin-container">
+
+    <aside class="admin-sidebar">
+      <ul class="menu" id="sidebar-menu">
+        <!-- Menu will be generated based on role -->
+      </ul>
+    </aside>
+
+
+
+    <main class="admin-content">
+      <div class="page-head">
+        <div>
+          <h1>Dashboard</h1>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Filter</h2>
+        <div class="filter-grid filter-grid-reference">
+          <div class="form-group">
+            <label for="dashboardPeriodFilter">Periode</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="date" id="dashboardPeriodStart" value="2026-01-01" style="width: 48%;">
+              <input type="date" id="dashboardPeriodEnd" value="2026-12-31" style="width: 48%;">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Event Overview</h2>
+          <span class="text-small text-muted">Last updated: 12 Jan 2026</span>
+        </div>
+
+        <table class="table" id="survey-overview-table">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Periode</th>
+              <th>Status</th>
+              <th>Responden</th>
+              <th>Target Responden</th>
+              <th>Score</th>
+              <th>Target Score</th>
+              <th class="survey-action-col">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Survey Corp IT &amp; BPM</td>
+              <td>01 Jan 2026 - 31 Jan 2026</td>
+              <td><span class="badge badge-active">Active</span></td>
+              <td>1,245</td>
+              <td>1,500</td>
+              <td>8.4</td>
+              <td>8.5</td>
+              <td class="survey-action-col">
+                <a class="btn btn-edit" href="survey-create">Edit</a>
+              </td>
+            </tr>
+            <tr>
+              <td>Survey IT Digital</td>
+              <td>01 Des 2025 - 31 Des 2025</td>
+              <td><span class="badge badge-closed">Closed</span></td>
+              <td>980</td>
+              <td>1,000</td>
+              <td>8.3</td>
+              <td>8.5</td>
+              <td class="survey-action-col">
+                <a class="btn btn-ghost" href="report-selection">View Report</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <script>
+        // Hide action column for IT Lead role
+        (function() {
+          const userRole = localStorage.getItem('userRole');
+          if (userRole === 'it_lead' || userRole === 'dept_head') {
+            const actionCols = document.querySelectorAll('.survey-action-col');
+            actionCols.forEach(col => col.style.display = 'none');
+          }
+        })();
+      </script>
+
+    </main>
+  </div>
+
+  <script src="js/user-menu.js"></script>
+  <script src="js/filter-actions.js"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

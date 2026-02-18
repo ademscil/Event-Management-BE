@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Best Comments Management - CSI Portal</title>
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=figtree:400,500,600,700" rel="stylesheet">
+</head>
+<body>
+    <div class="admin-container">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <!-- Sidebar content will be loaded by sidebar.js -->
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="admin-header">
+                <div class="header-left">
+                    <h1>Best Comments Management</h1>
+                </div>
+                <div class="header-right">
+                    <span id="user-display"></span>
+                    <button class="btn btn-secondary" id="logout-btn">Logout</button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content-area">
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab-btn active" data-tab="view-comments" id="tab-view-comments-btn">View Comments</button>
+                    <button class="tab-btn" data-tab="view-best-comments">View Best Comments</button>
+                </div>
+
+                <!-- Tab 1: View Comments (Admin Event only) -->
+                <div id="tab-view-comments" class="tab-content active">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>View Comments</h2>
+                            <p class="text-muted">Select comments to mark as best comments</p>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Filters -->
+                            <div class="filter-section">
+                                <div class="filter-row">
+                                    <div class="form-group">
+                                        <label for="filter-survey">Survey</label>
+                                        <select id="filter-survey" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="filter-function">Function</label>
+                                        <select id="filter-function" class="form-control">
+                                            <option value="">All</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="action-buttons">
+                                <button id="btn-save-best-comments" class="btn btn-primary">
+                                    Save as Best Comments
+                                </button>
+                            </div>
+
+                            <!-- Comments Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th><input type="checkbox" id="select-all-comments"></th>
+                                            <th>Survey</th>
+                                            <th>Function</th>
+                                            <th>Respondent</th>
+                                            <th>Comment</th>
+                                            <th>Rating</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="comments-tbody">
+                                        <tr>
+                                            <td colspan="6" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="info-box">
+                                <p><strong>Instructions:</strong></p>
+                                <ul>
+                                    <li>Review all comments from survey responses</li>
+                                    <li>Select comments that are exemplary and provide valuable insights</li>
+                                    <li>Click "Save as Best Comments" to mark selected comments</li>
+                                    <li>Best comments will be visible to IT Leads and Department Heads</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 2: View Best Comments (All roles) -->
+                <div id="tab-view-best-comments" class="tab-content">
+                    <div class="panel">
+                        <div class="panel-header">
+                            <h2>View Best Comments</h2>
+                            <p class="text-muted">Best comments with IT Lead feedback</p>
+                        </div>
+                        <div class="panel-body">
+                            <!-- Action Buttons -->
+                            <div class="action-buttons">
+                                <button id="btn-export-best-comments" class="btn btn-primary">
+                                    Export to Excel
+                                </button>
+                            </div>
+
+                            <!-- Best Comments Table -->
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Survey</th>
+                                            <th>Function</th>
+                                            <th>Comment</th>
+                                            <th>IT Lead</th>
+                                            <th>Feedback</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="best-comments-tbody">
+                                        <tr>
+                                            <td colspan="5" class="text-center">Loading...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            <div class="info-box">
+                                <p><strong>Information:</strong></p>
+                                <ul>
+                                    <li>This view shows all best comments selected by Admin Event</li>
+                                    <li>IT Lead feedback is displayed when available</li>
+                                    <li>Department Heads have read-only access to this view</li>
+                                    <li>Export functionality creates an Excel file with all best comments</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/auth.js"></script>
+    <script src="js/sidebar.js"></script>
+    <script src="js/approval.js"></script>
+    <script>
+        // Best Comments specific functionality
+        const BestCommentsManager = {
+            /**
+             * Export best comments to Excel
+             */
+            exportBestComments: async function() {
+                try {
+                    const token = localStorage.getItem('token');
+                    window.location.href = `/api/v1/approvals/best-comments/export?token=${token}`;
+                } catch (error) {
+                    console.error('Error exporting best comments:', error);
+                    ApprovalManager.showError('Failed to export best comments');
+                }
+            }
+        };
+
+        // Override select all for comments tab
+        document.getElementById('select-all-comments')?.addEventListener('change', function(e) {
+            const checkboxes = document.querySelectorAll('.comment-checkbox');
+            checkboxes.forEach(cb => cb.checked = e.target.checked);
+        });
+
+        // Check authentication
+        AuthUtils.checkAuth();
+        
+        // Display user info
+        const user = AuthUtils.getCurrentUser();
+        if (user) {
+            document.getElementById('user-display').textContent = user.displayName || user.username;
+        }
+
+        // Check user role and hide/show tabs accordingly
+        if (user && user.role) {
+            const viewCommentsTab = document.getElementById('tab-view-comments-btn');
+            const viewCommentsContent = document.getElementById('tab-view-comments');
+            
+            // Only Admin Event can see "View Comments" tab
+            if (user.role !== 'AdminEvent' && user.role !== 'SuperAdmin') {
+                if (viewCommentsTab) viewCommentsTab.style.display = 'none';
+                if (viewCommentsContent) viewCommentsContent.style.display = 'none';
+                
+                // Switch to "View Best Comments" tab by default
+                ApprovalManager.switchTab('view-best-comments');
+            }
+
+            // Department Head has read-only access
+            if (user.role === 'DepartmentHead') {
+                // Hide action buttons for Department Head
+                document.getElementById('btn-export-best-comments')?.parentElement.style.display = 'none';
+            }
+        }
+
+        // Load sidebar
+        if (window.Sidebar) {
+            Sidebar.init();
+        }
+
+        document.getElementById('logout-btn')?.addEventListener('click', () => {
+            AuthUtils.logout();
+        });
+
+        document.getElementById('btn-save-best-comments')?.addEventListener('click', () => {
+            ApprovalManager.saveAsBestComments();
+        });
+
+        document.getElementById('btn-export-best-comments')?.addEventListener('click', () => {
+            BestCommentsManager.exportBestComments();
+        });
+
+        // Load comments by default (if Admin Event)
+        if (user && (user.role === 'AdminEvent' || user.role === 'SuperAdmin')) {
+            ApprovalManager.switchTab('view-comments');
+        } else {
+            ApprovalManager.switchTab('view-best-comments');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notifikasi Persetujuan</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            color: #28a745;
+            margin: 0 0 10px 0;
+        }
+        .success-badge {
+            display: inline-block;
+            background-color: #28a745;
+            color: #fff;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .content {
+            margin-bottom: 30px;
+        }
+        .info-box {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .info-box p {
+            margin: 5px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="success-badge">✓ DISETUJUI</span>
+            <h1>Takeout Disetujui</h1>
+        </div>
+        
+        <div class="content">
+            <p>Kepada Yth. <strong><%= recipientName %></strong>,</p>
+            
+            <p>Usulan takeout Anda telah <strong>disetujui</strong> oleh IT Lead.</p>
+            
+            <div class="info-box">
+                <p><strong>Survey:</strong> <%= surveyTitle %></p>
+                <p><strong>Responden:</strong> <%= respondentEmail %></p>
+                <p><strong>Pertanyaan:</strong> <%= questionText %></p>
+                <% if (approvalReason) { %>
+                <p><strong>Alasan Persetujuan:</strong> <%= approvalReason %></p>
+                <% } %>
+                <p><strong>Disetujui oleh:</strong> <%= approverName %></p>
+                <p><strong>Tanggal:</strong> <%= approvalDate %></p>
+            </div>
+            
+            <p>Respons ini akan dikecualikan dari analisis akhir.</p>
+        </div>
+        
+        <div class="footer">
+            <p>Email ini dikirim secara otomatis oleh CSI Portal - PT Astra Otoparts Tbk</p>
+            <p>Mohon tidak membalas email ini.</p>
+        </div>
+    </div>
+</body>
+</html>

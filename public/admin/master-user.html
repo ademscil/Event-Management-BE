@@ -1,0 +1,562 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Master User - IT Survey</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <link rel="stylesheet" href="css/admin-mockup.css">
+  <link rel="stylesheet" href="css/utilities-mockup.css">
+  <script src="js/auth.js"></script>
+  <script src="js/mockup-auth-bridge.js"></script>
+</head>
+<body>
+
+  <header class="admin-header">
+    <div class="logo">
+      <a href="dashboard" style="text-decoration:none;color:inherit;">
+        <img src="/assets/img/logo.png" alt="Logo">
+        <span>IT Survey Admin</span>
+      </a>
+    </div>
+    <div class="user-info" style="position: relative;">
+      <div class="user-dropdown" style="cursor: pointer; display: flex; align-items: center; gap: 6px;">
+        <span id="user-display">Admin</span>
+        <span style="font-size: 10px;">&#9662;</span>
+      </div>
+      <div id="user-dropdown-menu" style="display: none; position: absolute; top: 100%; right: 0; background: white; border: 1px solid #d1d5db; border-radius: 6px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); min-width: 120px; z-index: 1000; margin-top: 4px;">
+        <div class="logout-action" style="padding: 8px 12px; cursor: pointer; font-size: 12px; color: #374151; transition: background-color 0.2s;">Logout</div>
+      </div>
+    </div>
+  </header>
+  <script>
+    window.logoutUser = async function() {
+      if (window.Auth && typeof window.Auth.logout === "function") {
+        await window.Auth.logout();
+      }
+      localStorage.removeItem("loggedIn");
+      localStorage.removeItem("username");
+      localStorage.removeItem("userRole");
+      localStorage.removeItem("userName");
+      window.location.href = "login";
+    };
+
+    window.toggleUserDropdown = function(event) {
+      if (event) event.stopPropagation();
+      const menu = document.getElementById("user-dropdown-menu");
+      if (menu) {
+        menu.style.display = menu.style.display === "none" ? "block" : "none";
+      }
+    };
+
+    document.addEventListener("click", function(e) {
+      if (!e.target.closest(".user-info")) {
+        const menu = document.getElementById("user-dropdown-menu");
+        if (menu) menu.style.display = "none";
+      }
+    });
+  </script>
+
+  <div class="admin-container">
+
+    <aside class="admin-sidebar">
+      <ul class="menu" id="sidebar-menu">
+      </ul>
+    </aside>
+
+    <main class="admin-content">
+      <div class="page-head">
+        <div>
+          <h1>Master User</h1>
+          <div class="page-subtitle">User access, role, and approval mapping.</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" type="button" id="btn-open-create-user">+ Create User</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Filter</h2>
+        <div class="filter-grid filter-grid-reference">
+          <div class="form-group">
+            <label>Role</label>
+            <select>
+              <option>All Roles</option>
+              <option>Super Admin</option>
+              <option>Admin Event</option>
+              <option>IT Lead</option>
+              <option>Dept Head</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Department</label>
+            <select>
+              <option>All Departments</option>
+              <option>IT Digital</option>
+              <option>IT Infrastructure</option>
+              <option>IT Apps</option>
+              <option>Sales</option>
+              <option>HR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select>
+              <option>All</option>
+              <option selected>Active</option>
+              <option>Inactive</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Daftar User</h2>
+          <span class="text-small text-muted">Total 74 users</span>
+        </div>
+
+        <div style="overflow-x: auto;">
+          <table class="table" style="min-width: 860px;">
+            <thead>
+              <tr>
+                <th>NPK</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Department</th>
+                <th>Divisi</th>
+                <th>Status</th>
+                <th>Aksi</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2091</td>
+                <td>Firman</td>
+                <td>firman@company.co.id</td>
+                <td>Admin Event</td>
+                <td>IT Digital</td>
+                <td>IT Apps</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>
+                  <a class="btn btn-edit js-open-edit-user" href="#">Edit</a>
+                  <a class="btn btn-reject js-toggle-user-status" href="#">Deactivate</a>
+                </td>
+              </tr>
+              <tr>
+                <td>4589</td>
+                <td>Sinta</td>
+                <td>sinta@company.co.id</td>
+                <td>IT Lead</td>
+                <td>IT Infrastructure</td>
+                <td>IT Ops</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>
+                  <a class="btn btn-edit js-open-edit-user" href="#">Edit</a>
+                  <a class="btn btn-reject js-toggle-user-status" href="#">Deactivate</a>
+                </td>
+              </tr>
+              <tr>
+                <td>7751</td>
+                <td>Rudi</td>
+                <td>rudi@dealer.co.id</td>
+                <td>Super Admin</td>
+                <td>Sales</td>
+                <td>Commercial</td>
+                <td><span class="badge badge-closed">Inactive</span></td>
+                <td>
+                  <a class="btn btn-edit js-open-edit-user" href="#">Edit</a>
+                  <a class="btn btn-approve js-toggle-user-status" href="#">Activate</a>
+                </td>
+              </tr>
+              <tr>
+                <td>3321</td>
+                <td>Indah</td>
+                <td>indah@company.co.id</td>
+                <td>Dept Head</td>
+                <td>IT Digital</td>
+                <td>IT Apps</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>
+                  <a class="btn btn-edit js-open-edit-user" href="#">Edit</a>
+                  <a class="btn btn-reject js-toggle-user-status" href="#">Deactivate</a>
+                </td>
+              </tr>
+              <tr>
+                <td>8893</td>
+                <td>Arif</td>
+                <td>arif@dealer.co.id</td>
+                <td>Admin Event</td>
+                <td>Sales</td>
+                <td>Retail</td>
+                <td><span class="badge badge-active">Active</span></td>
+                <td>
+                  <a class="btn btn-edit js-open-edit-user" href="#">Edit</a>
+                  <a class="btn btn-reject js-toggle-user-status" href="#">Deactivate</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Upload Data Master</h2>
+          <span class="text-small text-muted">Unggah user admin/IT lead dari file (CSV/Excel).</span>
+        </div>
+        <div class="form-inline">
+          <div class="form-group" style="flex:1;">
+            <label>Pilih file</label>
+            <input type="file" />
+          </div>
+          <a class="btn btn-secondary" href="master-user?action=template">Download Template</a>
+          <a class="btn btn-primary" href="master-user?action=upload">Upload</a>
+        </div>
+        <div class="alert" style="margin-top:10px;">Kolom minimal: Nama, Email, Role, Status.</div>
+      </div>
+
+    </main>
+  </div>
+
+  <div id="createUserModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: white; border-radius: 12px; width: 92%; max-width: 720px;">
+      <div style="padding: 18px 22px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Create User</h2>
+        <button class="js-close-create-user-modal" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #d1d5db; background: white; cursor: pointer; font-size: 18px; color: #6b7280;">&times;</button>
+      </div>
+      <div style="padding: 20px 22px;">
+        <div style="display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
+          <div class="form-group">
+            <label>LDAP User</label>
+            <select id="createLdapUser" >
+              <option value="yes" selected>Ya</option>
+              <option value="no">Tidak</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" placeholder="Nama user">
+          </div>
+          <div class="form-group">
+            <label>NPK</label>
+            <input type="text" placeholder="Nomor NPK">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" placeholder="user@company.co.id">
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <select>
+              <option>Super Admin</option>
+              <option>Admin Event</option>
+              <option>IT Lead</option>
+              <option>Dept Head</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Divisi</label>
+            <select>
+              <option>IT Apps</option>
+              <option>IT Ops</option>
+              <option>Commercial</option>
+              <option>Retail</option>
+              <option>Corporate</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Department</label>
+            <select>
+              <option>IT Digital</option>
+              <option>IT Infrastructure</option>
+              <option>IT Apps</option>
+              <option>Sales</option>
+              <option>HR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select>
+              <option>Active</option>
+              <option>Inactive</option>
+            </select>
+          </div>
+          <div class="form-group" id="createPasswordGroup" style="display: none;">
+            <label>Password</label>
+            <input type="password" id="createPassword" placeholder="Masukkan password">
+          </div>
+        </div>
+      </div>
+      <div style="padding: 12px 22px; border-top: 1px solid #e5e7eb; display: flex; gap: 8px; justify-content: flex-end; background: #f9fafb;">
+        <button class="btn btn-secondary js-close-create-user-modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-create-user">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="editUserModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: white; border-radius: 12px; width: 92%; max-width: 720px;">
+      <div style="padding: 18px 22px; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; justify-content: space-between;">
+        <h2 style="margin: 0; font-size: 18px; font-weight: 600;">Edit User</h2>
+        <button class="js-close-edit-user-modal" style="width: 32px; height: 32px; border-radius: 8px; border: 1px solid #d1d5db; background: white; cursor: pointer; font-size: 18px; color: #6b7280;">&times;</button>
+      </div>
+      <div style="padding: 20px 22px;">
+        <div style="display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr));">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" id="editName" placeholder="Nama user">
+          </div>
+          <div class="form-group">
+            <label>NPK</label>
+            <input type="text" id="editNpk" placeholder="Nomor NPK">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" id="editEmail" placeholder="user@company.co.id">
+          </div>
+          <div class="form-group">
+            <label>Role</label>
+            <select id="editRole">
+              <option>Super Admin</option>
+              <option>Admin Event</option>
+              <option>IT Lead</option>
+              <option>Dept Head</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Divisi</label>
+            <select id="editDivisi">
+              <option>IT Apps</option>
+              <option>IT Ops</option>
+              <option>Commercial</option>
+              <option>Retail</option>
+              <option>Corporate</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Department</label>
+            <select id="editDepartment">
+              <option>IT Digital</option>
+              <option>IT Infrastructure</option>
+              <option>IT Apps</option>
+              <option>Sales</option>
+              <option>HR</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="editStatus">
+              <option>Active</option>
+              <option>Inactive</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div style="padding: 12px 22px; border-top: 1px solid #e5e7eb; display: flex; gap: 8px; justify-content: flex-end; background: #f9fafb;">
+        <button class="btn btn-secondary js-close-edit-user-modal">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-edit-user">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentEditRow = null;
+
+    function toggleCreateUserPassword() {
+      const ldap = document.getElementById('createLdapUser');
+      const passwordGroup = document.getElementById('createPasswordGroup');
+      const passwordInput = document.getElementById('createPassword');
+      if (!ldap || !passwordGroup || !passwordInput) return;
+
+      const useManualPassword = ldap.value === 'no';
+      passwordGroup.style.display = useManualPassword ? '' : 'none';
+      if (!useManualPassword) {
+        passwordInput.value = '';
+      }
+    }
+
+    function openCreateUserModal() {
+      const ldap = document.getElementById('createLdapUser');
+      const passwordInput = document.getElementById('createPassword');
+      if (ldap) ldap.value = 'yes';
+      if (passwordInput) passwordInput.value = '';
+      toggleCreateUserPassword();
+      document.getElementById('createUserModal').style.display = 'flex';
+    }
+
+    function closeCreateUserModal() {
+      document.getElementById('createUserModal').style.display = 'none';
+    }
+
+    function submitCreateUser() {
+      const ldap = document.getElementById('createLdapUser')?.value || 'yes';
+      const password = document.getElementById('createPassword')?.value.trim() || '';
+      if (ldap === 'no' && !password) {
+        alert('Password wajib diisi jika LDAP User = Tidak.');
+        return;
+      }
+      alert('User created (mock).');
+      closeCreateUserModal();
+    }
+
+    function openEditUserModal(trigger) {
+      const row = trigger.closest('tr');
+      if (!row) return;
+      currentEditRow = row;
+      const cells = row.querySelectorAll('td');
+      const statusText = cells[6]?.textContent.trim() || 'Active';
+
+      document.getElementById('editNpk').value = cells[0]?.textContent.trim() || '';
+      document.getElementById('editName').value = cells[1]?.textContent.trim() || '';
+      document.getElementById('editEmail').value = cells[2]?.textContent.trim() || '';
+      ensureSelectOption(document.getElementById('editRole'), cells[3]?.textContent.trim() || '');
+      ensureSelectOption(document.getElementById('editDepartment'), cells[4]?.textContent.trim() || '');
+      ensureSelectOption(document.getElementById('editDivisi'), cells[5]?.textContent.trim() || '');
+      ensureSelectOption(document.getElementById('editStatus'), statusText);
+
+      document.getElementById('editUserModal').style.display = 'flex';
+    }
+
+    function closeEditUserModal() {
+      document.getElementById('editUserModal').style.display = 'none';
+    }
+
+    function saveEditUser() {
+      if (!currentEditRow) return;
+      const cells = currentEditRow.querySelectorAll('td');
+      const name = document.getElementById('editName').value.trim();
+      const npk = document.getElementById('editNpk').value.trim();
+      const email = document.getElementById('editEmail').value.trim();
+      const role = document.getElementById('editRole').value;
+      const department = document.getElementById('editDepartment').value;
+      const divisi = document.getElementById('editDivisi').value;
+      const status = document.getElementById('editStatus').value;
+
+      if (cells[0]) cells[0].textContent = npk;
+      if (cells[1]) cells[1].textContent = name;
+      if (cells[2]) cells[2].textContent = email;
+      if (cells[3]) cells[3].textContent = role;
+      if (cells[4]) cells[4].textContent = department;
+      if (cells[5]) cells[5].textContent = divisi;
+
+      updateRowStatus(currentEditRow, status);
+      alert('User updated (mock).');
+      closeEditUserModal();
+    }
+
+    function ensureSelectOption(selectEl, value) {
+      if (!selectEl || !value) return;
+      const exists = Array.from(selectEl.options).some(opt => opt.value === value);
+      if (!exists) {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;
+        selectEl.insertBefore(opt, selectEl.firstChild);
+      }
+      selectEl.value = value;
+    }
+
+    function toggleUserStatus(trigger) {
+      const row = trigger.closest('tr');
+      if (!row) return;
+      const badge = row.querySelector('.badge');
+      const current = badge ? badge.textContent.trim() : 'Active';
+      const nextStatus = current.toLowerCase() === 'active' ? 'Inactive' : 'Active';
+      const actionLabel = nextStatus === 'Inactive' ? 'Deactivate' : 'Activate';
+      if (confirm(`${actionLabel} user ini?`)) {
+        updateRowStatus(row, nextStatus);
+      }
+    }
+
+    function updateRowStatus(row, status) {
+      const badge = row.querySelector('.badge');
+      const toggleBtn = row.querySelector('.btn-reject, .btn-approve');
+      const isInactive = String(status).toLowerCase() === 'inactive';
+
+      if (badge) {
+        badge.className = isInactive ? 'badge badge-closed' : 'badge badge-active';
+        badge.textContent = isInactive ? 'Inactive' : 'Active';
+      }
+
+      if (toggleBtn) {
+        toggleBtn.className = isInactive ? 'btn btn-approve' : 'btn btn-reject';
+        toggleBtn.textContent = isInactive ? 'Activate' : 'Deactivate';
+      }
+    }
+
+    document.getElementById('createUserModal')?.addEventListener('click', function(e) {
+      if (e.target === this) closeCreateUserModal();
+    });
+
+    document.getElementById('editUserModal')?.addEventListener('click', function(e) {
+      if (e.target === this) closeEditUserModal();
+    });
+
+    (function initMasterUserActions() {
+      const openCreateBtn = document.getElementById('btn-open-create-user');
+      if (openCreateBtn) openCreateBtn.addEventListener('click', openCreateUserModal);
+
+      document.querySelectorAll('.js-close-create-user-modal').forEach((btn) => {
+        btn.addEventListener('click', closeCreateUserModal);
+      });
+
+      const submitCreateBtn = document.getElementById('btn-submit-create-user');
+      if (submitCreateBtn) submitCreateBtn.addEventListener('click', submitCreateUser);
+
+      const ldapSelect = document.getElementById('createLdapUser');
+      if (ldapSelect) ldapSelect.addEventListener('change', toggleCreateUserPassword);
+
+      document.querySelectorAll('.js-close-edit-user-modal').forEach((btn) => {
+        btn.addEventListener('click', closeEditUserModal);
+      });
+
+      const saveEditBtn = document.getElementById('btn-save-edit-user');
+      if (saveEditBtn) saveEditBtn.addEventListener('click', saveEditUser);
+
+      document.querySelectorAll('.js-open-edit-user').forEach((btn) => {
+        btn.addEventListener('click', function(event) {
+          event.preventDefault();
+          openEditUserModal(btn);
+        });
+      });
+
+      document.querySelectorAll('.js-toggle-user-status').forEach((btn) => {
+        btn.addEventListener('click', function(event) {
+          event.preventDefault();
+          toggleUserStatus(btn);
+        });
+      });
+    })();
+  </script>
+
+  <script src="js/mockup-sidebar.js"></script>
+  <script src="js/user-menu.js"></script>
+  <script src="js/filter-actions.js"></script>
+  <script>
+    (async function() {
+      if (typeof window.__syncMockupAuth === "function") { window.__syncMockupAuth(); }
+      const user = await window.AuthUtils.redirectIfNotAuthenticated("login");
+      if (!user) return;
+      if (user.role !== "SuperAdmin") { window.location.href = "dashboard"; }
+      const userDisplay = document.getElementById("user-display");
+      if (userDisplay) userDisplay.textContent = user.displayName || user.username || "Super Admin";
+    })();
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
