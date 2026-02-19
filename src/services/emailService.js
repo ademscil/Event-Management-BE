@@ -9,7 +9,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const sql = require('mssql');
 const logger = require('../config/logger');
-const { getPool } = require('../database/connection');
+const db = require('../database/connection');
 
 /**
  * @typedef {Object} EmailOptions
@@ -204,7 +204,7 @@ class EmailService {
      * @returns {Promise<void>}
      */
     async logEmail(logData) {
-        const pool = await getPool();
+        const pool = await db.getPool();
         
         try {
             await pool.request()
@@ -239,7 +239,7 @@ class EmailService {
      * @returns {Promise<boolean>} True if email was sent recently
      */
     async wasEmailSentRecently(recipientEmail, surveyId, hoursWindow = 24) {
-        const pool = await getPool();
+        const pool = await db.getPool();
         
         try {
             const result = await pool.request()
@@ -431,7 +431,7 @@ class EmailService {
      * @returns {Promise<Array>} Array of recipients
      */
     async getTargetRecipients(criteria) {
-        const pool = await getPool();
+        const pool = await db.getPool();
         const {
             businessUnitIds = [],
             divisionIds = [],
@@ -522,7 +522,7 @@ class EmailService {
 
         try {
             // Get survey details
-            const pool = await getPool();
+            const pool = await db.getPool();
             const surveyResult = await pool.request()
                 .input('surveyId', sql.UniqueIdentifier, surveyId)
                 .query(`
@@ -629,7 +629,7 @@ class EmailService {
      * @returns {Promise<Array>} Array of non-respondents
      */
     async getNonRespondents(surveyId) {
-        const pool = await getPool();
+        const pool = await db.getPool();
 
         try {
             // Get all recipients who received the blast email
@@ -697,7 +697,7 @@ class EmailService {
 
         try {
             // Get survey details
-            const pool = await getPool();
+            const pool = await db.getPool();
             const surveyResult = await pool.request()
                 .input('surveyId', sql.UniqueIdentifier, surveyId)
                 .query(`
@@ -816,3 +816,4 @@ class EmailService {
 
 // Export singleton instance
 module.exports = new EmailService();
+

@@ -80,6 +80,63 @@ class SurveyService {
   }
 
   /**
+   * Normalize assigned admin IDs from legacy and new payload fields.
+   * @param {Object} data - Request payload
+   * @returns {string[]} Deduplicated admin user IDs
+   */
+  normalizeAssignedAdminIds(data) {
+    const listFromArray = Array.isArray(data.assignedAdminIds) ? data.assignedAdminIds : [];
+    const listFromLegacy = data.assignedAdminId ? [data.assignedAdminId] : [];
+    const merged = [...listFromArray, ...listFromLegacy].filter(Boolean).map((item) => String(item).trim());
+    return [...new Set(merged)];
+  }
+
+  /**
+   * Validate all assigned admins are active AdminEvent users.
+   * @param {import('mssql').ConnectionPool} pool - DB pool
+   * @param {string[]} assignedAdminIds - Admin user IDs
+   * @returns {Promise<void>}
+   */
+  async validateAssignedAdmins(pool, assignedAdminIds) {
+    for (const adminId of assignedAdminIds) {
+      const adminCheck = await pool
+        .request()
+        .input('userId', sql.UniqueIdentifier, adminId)
+        .query("SELECT UserId FROM Users WHERE UserId = @userId AND IsActive = 1 AND Role = 'AdminEvent'");
+
+      if (adminCheck.recordset.length === 0) {
+        throw new ValidationError('Assigned admin user not found, inactive, or not Admin Event');
+      }
+    }
+  }
+
+  /**
+   * Replace all admin assignments for a survey.
+   * @param {import('mssql').ConnectionPool|import('mssql').Transaction} connection - DB connection
+   * @param {string} surveyId - Survey ID
+   * @param {string[]} assignedAdminIds - Admin user IDs
+   * @returns {Promise<void>}
+   */
+  async syncSurveyAdminAssignments(connection, surveyId, assignedAdminIds) {
+    const makeRequest = () =>
+      connection instanceof sql.Transaction ? new sql.Request(connection) : connection.request();
+
+    await makeRequest()
+      .input('surveyId', sql.UniqueIdentifier, surveyId)
+      .query('DELETE FROM SurveyAdminAssignments WHERE SurveyId = @surveyId');
+
+    for (const adminId of assignedAdminIds) {
+      await makeRequest()
+        .input('surveyId', sql.UniqueIdentifier, surveyId)
+        .input('adminUserId', sql.UniqueIdentifier, adminId)
+        .query(`
+          INSERT INTO SurveyAdminAssignments (SurveyId, AdminUserId, CreatedAt)
+          VALUES (@surveyId, @adminUserId, GETDATE())
+        `);
+    }
+  }
+
+  /**
    * Create a new survey
    * @param {Object} data - Survey data
    * @param {string} data.title - Survey title (required, max 500 chars)
@@ -118,16 +175,12 @@ class SurveyService {
 
       // Validate dates
       this.validateDates(data.startDate, data.endDate);
-
-      // Validate assigned admin if provided
-      if (data.assignedAdminId) {
-        const adminCheck = await pool.request()
-          .input('userId', sql.UniqueIdentifier, data.assignedAdminId)
-          .query('SELECT UserId FROM Users WHERE UserId = @userId AND IsActive = 1');
-
-        if (adminCheck.recordset.length === 0) {
-          throw new ValidationError('Assigned admin user not found or inactive');
-        }
+      const assignedAdminIds =
+        data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined
+          ? this.normalizeAssignedAdminIds(data)
+          : [];
+      if (assignedAdminIds.length > 0) {
+        await this.validateAssignedAdmins(pool, assignedAdminIds);
       }
 
       // Validate target score if provided
@@ -167,6 +220,8 @@ class SurveyService {
         `);
 
       const survey = surveyResult.recordset[0];
+
+      await this.syncSurveyAdminAssignments(transaction, survey.SurveyId, assignedAdminIds);
 
       // Create default configuration
       const config = data.configuration || {};
@@ -248,16 +303,12 @@ class SurveyService {
       if (data.status) {
         this.validateStatus(data.status);
       }
-
-      // Validate assigned admin if provided
-      if (data.assignedAdminId) {
-        const adminCheck = await pool.request()
-          .input('userId', sql.UniqueIdentifier, data.assignedAdminId)
-          .query('SELECT UserId FROM Users WHERE UserId = @userId AND IsActive = 1');
-
-        if (adminCheck.recordset.length === 0) {
-          throw new ValidationError('Assigned admin user not found or inactive');
-        }
+      const assignedAdminIds =
+        data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined
+          ? this.normalizeAssignedAdminIds(data)
+          : [];
+      if (assignedAdminIds.length > 0) {
+        await this.validateAssignedAdmins(pool, assignedAdminIds);
       }
 
       // Validate target score if provided
@@ -302,11 +353,10 @@ class SurveyService {
         updateFields.push('Status = @status');
         request.input('status', sql.NVarChar(50), data.status);
       }
-
-      if (data.assignedAdminId !== undefined) {
-        updateFields.push('AssignedAdminId = @assignedAdminId');
-        request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
-      }
+        if (data.assignedAdminId !== undefined) {
+          updateFields.push('AssignedAdminId = @assignedAdminId');
+          request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
+        }
 
       if (data.targetRespondents !== undefined) {
         updateFields.push('TargetRespondents = @targetRespondents');
@@ -341,6 +391,10 @@ class SurveyService {
         OUTPUT INSERTED.*
         WHERE SurveyId = @surveyId
       `);
+
+      if (assignedAdminIds !== null) {
+        await this.syncSurveyAdminAssignments(pool, surveyId, assignedAdminIds);
+      }
 
       logger.info('Survey updated', { surveyId });
       return result.recordset[0];
@@ -380,6 +434,10 @@ class SurveyService {
         throw new ValidationError('Cannot delete survey: responses exist');
       }
 
+      await pool.request()
+        .input('surveyId', sql.UniqueIdentifier, surveyId)
+        .query('DELETE FROM SurveyAdminAssignments WHERE SurveyId = @surveyId');
+
       // Delete survey (cascade will delete configuration and questions)
       const result = await pool.request()
         .input('surveyId', sql.UniqueIdentifier, surveyId)
@@ -411,7 +469,26 @@ class SurveyService {
       let query = `
         SELECT 
           s.*,
-          admin.DisplayName AS AssignedAdminName,
+          COALESCE(NULLIF(STUFF((
+            SELECT ', ' + u2.DisplayName
+            FROM SurveyAdminAssignments saa2
+            INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
+            WHERE saa2.SurveyId = s.SurveyId
+            FOR XML PATH(''), TYPE
+          ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), ''), admin.DisplayName) AS AssignedAdminName,
+          NULLIF(STUFF((
+            SELECT ', ' + u2.DisplayName
+            FROM SurveyAdminAssignments saa2
+            INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
+            WHERE saa2.SurveyId = s.SurveyId
+            FOR XML PATH(''), TYPE
+          ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS AssignedAdminNames,
+          NULLIF(STUFF((
+            SELECT ',' + CAST(saa2.AdminUserId AS NVARCHAR(36))
+            FROM SurveyAdminAssignments saa2
+            WHERE saa2.SurveyId = s.SurveyId
+            FOR XML PATH(''), TYPE
+          ).value('.', 'NVARCHAR(MAX)'), 1, 1, ''), '') AS AssignedAdminIdsCsv,
           ISNULL(resp.RespondentCount, 0) AS RespondentCount,
           sc.ConfigId, sc.HeroTitle, sc.HeroSubtitle, sc.HeroImageUrl,
           sc.LogoUrl, sc.BackgroundColor, sc.BackgroundImageUrl,
@@ -434,7 +511,14 @@ class SurveyService {
       }
 
       if (filter.assignedAdminId) {
-        query += ' AND s.AssignedAdminId = @assignedAdminId';
+        query += ` AND (
+          EXISTS (
+            SELECT 1 FROM SurveyAdminAssignments saaFilter
+            WHERE saaFilter.SurveyId = s.SurveyId
+              AND saaFilter.AdminUserId = @assignedAdminId
+          )
+          OR s.AssignedAdminId = @assignedAdminId
+        )`;
         request.input('assignedAdminId', sql.UniqueIdentifier, filter.assignedAdminId);
       }
 
@@ -453,6 +537,12 @@ class SurveyService {
           Status: row.Status,
           AssignedAdminId: row.AssignedAdminId,
           AssignedAdminName: row.AssignedAdminName || null,
+          AssignedAdminNames: row.AssignedAdminNames
+            ? row.AssignedAdminNames.split(',').map((name) => name.trim()).filter(Boolean)
+            : (row.AssignedAdminName ? [row.AssignedAdminName] : []),
+          AssignedAdminIds: row.AssignedAdminIdsCsv
+            ? row.AssignedAdminIdsCsv.split(',').map((id) => id.trim()).filter(Boolean)
+            : (row.AssignedAdminId ? [String(row.AssignedAdminId)] : []),
           TargetRespondents: row.TargetRespondents,
           TargetScore: row.TargetScore,
           CurrentScore: row.CurrentScore,
@@ -1099,7 +1189,6 @@ class SurveyService {
           updateFields.push('Status = @status');
           request.input('status', sql.NVarChar(50), data.status);
         }
-
         if (data.assignedAdminId !== undefined) {
           updateFields.push('AssignedAdminId = @assignedAdminId');
           request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
@@ -1949,6 +2038,7 @@ class SurveyService {
 
       const survey = surveyResult.recordset[0];
 
+
       // Use shortened link if available, otherwise use full link
       let linkToEncode = survey.ShortenedLink || survey.SurveyLink;
 
@@ -2006,6 +2096,7 @@ class SurveyService {
       }
 
       const survey = surveyResult.recordset[0];
+
 
       // If no link exists, generate one first
       let surveyLink = survey.SurveyLink;
@@ -3138,3 +3229,21 @@ module.exports.SurveyService = SurveyService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -17,14 +17,14 @@ const createDivisionValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('businessUnitId')
     .notEmpty().withMessage('Business Unit ID is required')
-    .isInt().withMessage('Business Unit ID must be an integer')
+    .isUUID().withMessage('Business Unit ID must be a valid UUID')
 ];
 
 /**
  * Validation rules for updating a division
  */
 const updateDivisionValidation = [
-  param('id').isInt().withMessage('Division ID must be an integer'),
+  param('id').isUUID().withMessage('Division ID must be a valid UUID'),
   body('code')
     .optional()
     .trim()
@@ -36,7 +36,7 @@ const updateDivisionValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('businessUnitId')
     .optional()
-    .isInt().withMessage('Business Unit ID must be an integer')
+    .isUUID().withMessage('Business Unit ID must be a valid UUID')
 ];
 
 /**
@@ -92,9 +92,9 @@ async function getDivisions(req, res) {
 
     let divisions;
     if (businessUnitId) {
-      divisions = await divisionService.getDivisionsByBusinessUnit(parseInt(businessUnitId));
+      divisions = await divisionService.getDivisionsByBusinessUnit(businessUnitId);
     } else {
-      divisions = await divisionService.getAllDivisions();
+      divisions = await divisionService.getDivisions();
     }
 
     res.json({
@@ -119,7 +119,7 @@ async function getDivisions(req, res) {
  */
 async function getDivisionById(req, res) {
   try {
-    const divisionId = parseInt(req.params.id);
+    const divisionId = req.params.id;
     const division = await divisionService.getDivisionById(divisionId);
 
     if (!division) {
@@ -159,7 +159,7 @@ async function updateDivision(req, res) {
       });
     }
 
-    const divisionId = parseInt(req.params.id);
+    const divisionId = req.params.id;
     const updates = req.body;
 
     const result = await divisionService.updateDivision(divisionId, updates);
@@ -194,7 +194,7 @@ async function updateDivision(req, res) {
  */
 async function deleteDivision(req, res) {
   try {
-    const divisionId = parseInt(req.params.id);
+    const divisionId = req.params.id;
     const result = await divisionService.deleteDivision(divisionId);
 
     if (!result.success) {
@@ -227,3 +227,4 @@ module.exports = {
   createDivisionValidation,
   updateDivisionValidation
 };
+

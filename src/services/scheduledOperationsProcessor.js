@@ -6,7 +6,7 @@
 const cron = require('node-cron');
 const sql = require('mssql');
 const logger = require('../config/logger');
-const { getPool } = require('../database/connection');
+const db = require('../database/connection');
 const emailService = require('./emailService');
 
 class ScheduledOperationsProcessor {
@@ -60,7 +60,7 @@ class ScheduledOperationsProcessor {
      * Process all pending scheduled operations
      */
     async processScheduledOperations() {
-        const pool = await getPool();
+        const pool = await db.getPool();
 
         try {
             // Get pending operations that are due
@@ -107,7 +107,7 @@ class ScheduledOperationsProcessor {
      * @param {Object} operation - Operation details
      */
     async processOperation(operation) {
-        const pool = await getPool();
+        const pool = await db.getPool();
         const operationId = operation.OperationId;
 
         try {
@@ -310,3 +310,4 @@ class ScheduledOperationsProcessor {
 
 // Export singleton instance
 module.exports = new ScheduledOperationsProcessor();
+

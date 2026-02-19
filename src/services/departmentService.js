@@ -297,6 +297,15 @@ class DepartmentService {
    * @param {boolean} [filter.includeInactive=false] - Include inactive Departments
    * @returns {Promise<Array>} Array of Departments
    */
+
+  /**
+   * Backward-compatible alias
+   * @param {Object} [filter] - Filter options
+   * @returns {Promise<Array>} Array of Departments
+   */
+  async getAllDepartments(filter = {}) {
+    return this.getDepartments(filter);
+  }
   async getDepartments(filter = {}) {
     try {
       const pool = await db.getPool();
@@ -384,4 +393,11 @@ class DepartmentService {
   }
 }
 
-module.exports = { DepartmentService, ValidationError, ConflictError, NotFoundError };
+const departmentService = new DepartmentService();
+
+module.exports = departmentService;
+module.exports.DepartmentService = DepartmentService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;
+

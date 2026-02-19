@@ -59,6 +59,9 @@ const updateUserValidation = [
   body('role')
     .optional()
     .isIn(['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead']).withMessage('Invalid role'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be a boolean'),
   body('businessUnitId')
     .optional()
     .isUUID().withMessage('Business Unit ID must be a valid UUID'),
@@ -381,4 +384,4 @@ module.exports = {
   updateUserValidation,
   toggleLDAPValidation,
   setPasswordValidation
-};
+};`r`n

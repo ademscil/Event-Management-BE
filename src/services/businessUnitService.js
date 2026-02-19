@@ -228,6 +228,15 @@ class BusinessUnitService {
    * @param {boolean} [filter.includeInactive=false] - Include inactive Business Units
    * @returns {Promise<Array>} Array of Business Units
    */
+
+  /**
+   * Backward-compatible alias
+   * @param {Object} [filter] - Filter options
+   * @returns {Promise<Array>} Array of Business Units
+   */
+  async getAllBusinessUnits(filter = {}) {
+    return this.getBusinessUnits(filter);
+  }
   async getBusinessUnits(filter = {}) {
     try {
       const pool = await db.getPool();
@@ -274,4 +283,11 @@ class BusinessUnitService {
   }
 }
 
-module.exports = { BusinessUnitService, ValidationError, ConflictError, NotFoundError };
+const businessUnitService = new BusinessUnitService();
+
+module.exports = businessUnitService;
+module.exports.BusinessUnitService = BusinessUnitService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;
+

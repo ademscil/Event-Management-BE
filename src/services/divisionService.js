@@ -288,6 +288,15 @@ class DivisionService {
    * @param {boolean} [filter.includeInactive=false] - Include inactive Divisions
    * @returns {Promise<Array>} Array of Divisions
    */
+
+  /**
+   * Backward-compatible alias
+   * @param {Object} [filter] - Filter options
+   * @returns {Promise<Array>} Array of Divisions
+   */
+  async getAllDivisions(filter = {}) {
+    return this.getDivisions(filter);
+  }
   async getDivisions(filter = {}) {
     try {
       const pool = await db.getPool();
@@ -334,4 +343,11 @@ class DivisionService {
   }
 }
 
-module.exports = { DivisionService, ValidationError, ConflictError, NotFoundError };
+const divisionService = new DivisionService();
+
+module.exports = divisionService;
+module.exports.DivisionService = DivisionService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;
+
