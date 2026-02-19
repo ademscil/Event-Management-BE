@@ -29,6 +29,10 @@ const createUserValidation = [
   body('password')
     .optional()
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 }).withMessage('NPK must be between 1 and 50 characters'),
   body('businessUnitId')
     .optional()
     .isUUID().withMessage('Business Unit ID must be a valid UUID'),
@@ -62,6 +66,10 @@ const updateUserValidation = [
   body('isActive')
     .optional()
     .isBoolean().withMessage('isActive must be a boolean'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 }).withMessage('NPK must be between 1 and 50 characters'),
   body('businessUnitId')
     .optional()
     .isUUID().withMessage('Business Unit ID must be a valid UUID'),
@@ -384,4 +392,4 @@ module.exports = {
   updateUserValidation,
   toggleLDAPValidation,
   setPasswordValidation
-};`r`n
+};

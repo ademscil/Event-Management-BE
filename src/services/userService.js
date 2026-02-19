@@ -307,6 +307,7 @@ class UserService {
       const result = await pool.request()
         .input('username', sql.NVarChar(50), data.username)
         .input('displayName', sql.NVarChar(200), data.displayName)
+        .input('npk', sql.NVarChar(50), data.npk || null)
         .input('email', sql.NVarChar(200), data.email)
         .input('role', sql.NVarChar(50), data.role)
         .input('useLDAP', sql.Bit, useLDAP)
@@ -316,12 +317,12 @@ class UserService {
         .input('departmentId', sql.UniqueIdentifier, orgHierarchy.departmentId ?? null)
         .query(`
           INSERT INTO Users (
-            Username, DisplayName, Email, Role, UseLDAP, PasswordHash,
+            Username, NPK, DisplayName, Email, Role, UseLDAP, PasswordHash,
             BusinessUnitId, DivisionId, DepartmentId, IsActive, CreatedAt
           )
           OUTPUT INSERTED.*
           VALUES (
-            @username, @displayName, @email, @role, @useLDAP, @passwordHash,
+            @username, @npk, @displayName, @email, @role, @useLDAP, @passwordHash,
             @businessUnitId, @divisionId, @departmentId, 1, GETDATE()
           )
         `);
@@ -355,7 +356,7 @@ class UserService {
       const userCheck = await pool.request()
         .input('userId', sql.UniqueIdentifier, userId)
         .query(`
-          SELECT UserId, Username, BusinessUnitId, DivisionId, DepartmentId
+          SELECT UserId, Username, NPK, BusinessUnitId, DivisionId, DepartmentId
           FROM Users
           WHERE UserId = @userId
         `);
@@ -408,6 +409,10 @@ class UserService {
       const request = pool.request();
       request.input('userId', sql.UniqueIdentifier, userId);
 
+      if (data.npk !== undefined) {
+        updateFields.push('NPK = @npk');
+        request.input('npk', sql.NVarChar(50), data.npk || null);
+      }
       if (data.displayName !== undefined) {
         updateFields.push('DisplayName = @displayName');
         request.input('displayName', sql.NVarChar(200), data.displayName);
@@ -516,6 +521,7 @@ class UserService {
           SELECT
             u.UserId,
             u.Username,
+            u.NPK,
             u.DisplayName,
             u.Email,
             u.Role,
@@ -573,7 +579,7 @@ class UserService {
       }
 
       if (filter.search) {
-        conditions.push('(u.Username LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)');
+        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)");
         request.input('search', sql.NVarChar(210), `%${filter.search}%`);
       }
 
@@ -586,7 +592,8 @@ class UserService {
         SELECT
           u.UserId,
           u.Username,
-          u.DisplayName,
+            u.NPK,
+            u.DisplayName,
           u.Email,
           u.Role,
           u.UseLDAP,
@@ -769,4 +776,4 @@ module.exports = userService;
 module.exports.UserService = UserService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
-module.exports.NotFoundError = NotFoundError;`r`n
+module.exports.NotFoundError = NotFoundError;

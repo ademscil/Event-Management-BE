@@ -1,4 +1,4 @@
-const sql = require('mssql');
+﻿const sql = require('mssql');
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
@@ -118,8 +118,12 @@ class SurveyService {
    * @returns {Promise<void>}
    */
   async syncSurveyAdminAssignments(connection, surveyId, assignedAdminIds) {
-    const makeRequest = () =>
-      connection instanceof sql.Transaction ? new sql.Request(connection) : connection.request();
+    const makeRequest = () => {
+      if (connection && typeof connection.request === 'function') {
+        return connection.request();
+      }
+      return new sql.Request(connection);
+    };
 
     await makeRequest()
       .input('surveyId', sql.UniqueIdentifier, surveyId)
@@ -175,11 +179,11 @@ class SurveyService {
 
       // Validate dates
       this.validateDates(data.startDate, data.endDate);
-      const assignedAdminIds =
-        data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined
-          ? this.normalizeAssignedAdminIds(data)
-          : [];
-      if (assignedAdminIds.length > 0) {
+      const hasAssignmentPayload = data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined;
+      const assignedAdminIds = hasAssignmentPayload
+        ? this.normalizeAssignedAdminIds(data)
+        : null;
+      if (assignedAdminIds && assignedAdminIds.length > 0) {
         await this.validateAssignedAdmins(pool, assignedAdminIds);
       }
 
@@ -221,7 +225,9 @@ class SurveyService {
 
       const survey = surveyResult.recordset[0];
 
-      await this.syncSurveyAdminAssignments(transaction, survey.SurveyId, assignedAdminIds);
+      if (assignedAdminIds) {
+        await this.syncSurveyAdminAssignments(transaction, survey.SurveyId, assignedAdminIds);
+      }
 
       // Create default configuration
       const config = data.configuration || {};
@@ -303,14 +309,13 @@ class SurveyService {
       if (data.status) {
         this.validateStatus(data.status);
       }
-      const assignedAdminIds =
-        data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined
-          ? this.normalizeAssignedAdminIds(data)
-          : [];
-      if (assignedAdminIds.length > 0) {
+      const hasAssignmentPayload = data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined;
+      const assignedAdminIds = hasAssignmentPayload
+        ? this.normalizeAssignedAdminIds(data)
+        : null;
+      if (assignedAdminIds && assignedAdminIds.length > 0) {
         await this.validateAssignedAdmins(pool, assignedAdminIds);
       }
-
       // Validate target score if provided
       if (data.targetScore !== undefined && data.targetScore !== null) {
         if (data.targetScore < 0 || data.targetScore > 10) {
@@ -392,7 +397,7 @@ class SurveyService {
         WHERE SurveyId = @surveyId
       `);
 
-      if (assignedAdminIds !== null) {
+      if (assignedAdminIds) {
         await this.syncSurveyAdminAssignments(pool, surveyId, assignedAdminIds);
       }
 
@@ -434,7 +439,7 @@ class SurveyService {
         throw new ValidationError('Cannot delete survey: responses exist');
       }
 
-      await pool.request()
+      const assignmentDeleteResult = await pool.request()
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query('DELETE FROM SurveyAdminAssignments WHERE SurveyId = @surveyId');
 
@@ -443,8 +448,11 @@ class SurveyService {
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query('DELETE FROM Surveys WHERE SurveyId = @surveyId');
 
+      const affectedRows =
+        result?.rowsAffected?.[0] ?? assignmentDeleteResult?.rowsAffected?.[0] ?? 0;
+
       logger.info('Survey deleted', { surveyId });
-      return result.rowsAffected[0] > 0;
+      return affectedRows > 0;
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
         throw error;
