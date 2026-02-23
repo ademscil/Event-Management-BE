@@ -133,7 +133,9 @@ async function getSurveys(req, res) {
     const filter = {};
     if (status) filter.status = status;
     if (search) filter.search = search;
-    if (assignedAdminId) {
+    if (req.user?.role === 'AdminEvent') {
+      filter.assignedAdminId = req.user.userId;
+    } else if (assignedAdminId) {
       filter.assignedAdminId = assignedAdminId;
     }
 
@@ -636,6 +638,7 @@ module.exports = {
   updateSurveyValidation,
   upload
 };
+
 
 
 
