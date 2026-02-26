@@ -113,13 +113,33 @@ describe('SurveyService', () => {
         .rejects.toThrow('End date must be after start date');
     });
 
-    it('should throw ValidationError if dates are missing', async () => {
-      const invalidData = { ...validSurveyData, startDate: undefined, endDate: undefined };
+    it('should create draft survey when dates are missing', async () => {
+      const dataWithoutDates = { ...validSurveyData, startDate: undefined, endDate: undefined };
+      const mockSurvey = {
+        SurveyId: '22222222-2222-2222-2222-222222222222',
+        Title: dataWithoutDates.title,
+        Status: 'Draft',
+        StartDate: null,
+        EndDate: null
+      };
+      const mockConfig = {
+        ConfigId: '33333333-3333-3333-3333-333333333333',
+        SurveyId: mockSurvey.SurveyId,
+        ShowProgressBar: true,
+        ShowPageNumbers: true,
+        MultiPage: false
+      };
 
-      await expect(surveyService.createSurvey(invalidData))
-        .rejects.toThrow(ValidationError);
-      await expect(surveyService.createSurvey(invalidData))
-        .rejects.toThrow('Start date and end date are required');
+      mockRequest.query
+        .mockResolvedValueOnce({ recordset: [mockSurvey] })
+        .mockResolvedValueOnce({ recordset: [mockConfig] });
+
+      const result = await surveyService.createSurvey(dataWithoutDates);
+
+      expect(result.SurveyId).toBe(mockSurvey.SurveyId);
+      expect(result.StartDate).toBeNull();
+      expect(result.EndDate).toBeNull();
+      expect(result.Status).toBe('Draft');
     });
 
     it('should throw ValidationError if createdBy is missing', async () => {
@@ -987,3 +1007,5 @@ describe('SurveyService', () => {
     });
   });
 });
+
+
