@@ -36,7 +36,10 @@ const updateDepartmentValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('divisionId')
     .optional()
-    .isUUID().withMessage('Division ID must be a valid UUID')
+    .isUUID().withMessage('Division ID must be a valid UUID'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -89,12 +92,13 @@ async function createDepartment(req, res) {
 async function getDepartments(req, res) {
   try {
     const { divisionId } = req.query;
+    const includeInactive = req.query.includeInactive === 'true';
 
     let departments;
     if (divisionId) {
-      departments = await departmentService.getDepartmentsByDivision(divisionId);
+      departments = await departmentService.getDepartmentsByDivision(divisionId, { includeInactive });
     } else {
-      departments = await departmentService.getDepartments();
+      departments = await departmentService.getDepartments({ includeInactive });
     }
 
     res.json({

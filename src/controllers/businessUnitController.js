@@ -30,7 +30,10 @@ const updateBusinessUnitValidation = [
   body('name')
     .optional()
     .trim()
-    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters')
+    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -82,7 +85,8 @@ async function createBusinessUnit(req, res) {
  */
 async function getBusinessUnits(req, res) {
   try {
-    const businessUnits = await businessUnitService.getBusinessUnits();
+    const includeInactive = req.query.includeInactive === 'true';
+    const businessUnits = await businessUnitService.getBusinessUnits({ includeInactive });
 
     res.json({
       success: true,

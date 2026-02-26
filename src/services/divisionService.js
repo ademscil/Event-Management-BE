@@ -168,6 +168,10 @@ class DivisionService {
         throw new ValidationError('Name is required and must be 1-200 characters');
       }
 
+      if (data.isActive !== undefined && typeof data.isActive !== 'boolean') {
+        throw new ValidationError('isActive must be boolean');
+      }
+
       // Build update query
       const updateFields = [];
       const request = pool.request();
@@ -184,6 +188,10 @@ class DivisionService {
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);
+      }
+      if (data.isActive !== undefined) {
+        updateFields.push('IsActive = @isActive');
+        request.input('isActive', sql.Bit, data.isActive);
       }
 
       if (updateFields.length === 0) {

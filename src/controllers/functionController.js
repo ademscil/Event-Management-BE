@@ -21,7 +21,7 @@ const createFunctionValidation = [
  * Validation rules for updating a function
  */
 const updateFunctionValidation = [
-  param('id').isInt().withMessage('Function ID must be an integer'),
+  param('id').isUUID().withMessage('Function ID must be a valid UUID'),
   body('code')
     .optional()
     .trim()
@@ -30,7 +30,10 @@ const updateFunctionValidation = [
   body('name')
     .optional()
     .trim()
-    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters')
+    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -82,7 +85,8 @@ async function createFunction(req, res) {
  */
 async function getFunctions(req, res) {
   try {
-    const functions = await functionService.getFunctions();
+    const includeInactive = req.query.includeInactive === 'true';
+    const functions = await functionService.getFunctions({ includeInactive });
 
     res.json({
       success: true,
@@ -106,7 +110,7 @@ async function getFunctions(req, res) {
  */
 async function getFunctionById(req, res) {
   try {
-    const functionId = parseInt(req.params.id);
+    const functionId = req.params.id;
     const func = await functionService.getFunctionById(functionId);
 
     if (!func) {
@@ -146,7 +150,7 @@ async function updateFunction(req, res) {
       });
     }
 
-    const functionId = parseInt(req.params.id);
+    const functionId = req.params.id;
     const updates = req.body;
 
     const result = await functionService.updateFunction(functionId, updates);
@@ -181,7 +185,7 @@ async function updateFunction(req, res) {
  */
 async function deleteFunction(req, res) {
   try {
-    const functionId = parseInt(req.params.id);
+    const functionId = req.params.id;
     const result = await functionService.deleteFunction(functionId);
 
     if (!result.success) {

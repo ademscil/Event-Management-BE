@@ -24,10 +24,10 @@ const createSurveyValidation = [
     .trim()
     .isLength({ max: 1000 }).withMessage('Description must not exceed 1000 characters'),
   body('startDate')
-    .notEmpty().withMessage('Start date is required')
+    .optional()
     .isISO8601().withMessage('Invalid start date format'),
   body('endDate')
-    .notEmpty().withMessage('End date is required')
+    .optional()
     .isISO8601().withMessage('Invalid end date format'),
   body('status')
     .optional()

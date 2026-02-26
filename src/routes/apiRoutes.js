@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const multer = require('multer');
 const {
   requireAuth,
@@ -27,6 +27,8 @@ const upload = multer({ storage: multer.memoryStorage() });
 // Users
 router.get('/users', requireAuth, requirePermission('users:read'), userController.getUsers);
 router.get('/users/template', requireAuth, requirePermission('users:read'), userController.downloadUserTemplate);
+router.get('/users/download', requireAuth, requirePermission('users:read'), userController.downloadUserList);
+router.post('/users/upload', requireAuth, requirePermission('users:create'), upload.single('file'), userController.uploadUserFile);
 router.get('/users/:id', requireAuth, requirePermission('users:read'), userController.getUserById);
 router.post('/users', requireAuth, requirePermission('users:create'), userController.createUserValidation, userController.createUser);
 router.put('/users/:id', requireAuth, requirePermission('users:update'), userController.updateUserValidation, userController.updateUser);

@@ -169,16 +169,14 @@ class SurveyService {
         throw new ValidationError('Title must not exceed 500 characters');
       }
 
-      if (!data.startDate || !data.endDate) {
-        throw new ValidationError('Start date and end date are required');
-      }
-
       if (!data.createdBy) {
         throw new ValidationError('CreatedBy is required');
       }
 
-      // Validate dates
-      this.validateDates(data.startDate, data.endDate);
+      // Validate dates only if both are provided
+      if (data.startDate && data.endDate) {
+        this.validateDates(data.startDate, data.endDate);
+      }
       const hasAssignmentPayload = data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined;
       const assignedAdminIds = hasAssignmentPayload
         ? this.normalizeAssignedAdminIds(data)
@@ -201,8 +199,8 @@ class SurveyService {
       const surveyResult = await new sql.Request(transaction)
         .input('title', sql.NVarChar(500), data.title)
         .input('description', sql.NVarChar(sql.MAX), data.description || null)
-        .input('startDate', sql.DateTime2, new Date(data.startDate))
-        .input('endDate', sql.DateTime2, new Date(data.endDate))
+        .input('startDate', sql.DateTime2, data.startDate ? new Date(data.startDate) : null)
+        .input('endDate', sql.DateTime2, data.endDate ? new Date(data.endDate) : null)
         .input('status', sql.NVarChar(50), 'Draft')
         .input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId || null)
         .input('targetRespondents', sql.Int, data.targetRespondents || null)
