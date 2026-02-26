@@ -36,7 +36,10 @@ const updateDivisionValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('businessUnitId')
     .optional()
-    .isUUID().withMessage('Business Unit ID must be a valid UUID')
+    .isUUID().withMessage('Business Unit ID must be a valid UUID'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -89,12 +92,13 @@ async function createDivision(req, res) {
 async function getDivisions(req, res) {
   try {
     const { businessUnitId } = req.query;
+    const includeInactive = req.query.includeInactive === 'true';
 
     let divisions;
     if (businessUnitId) {
-      divisions = await divisionService.getDivisionsByBusinessUnit(businessUnitId);
+      divisions = await divisionService.getDivisionsByBusinessUnit(businessUnitId, { includeInactive });
     } else {
-      divisions = await divisionService.getDivisions();
+      divisions = await divisionService.getDivisions({ includeInactive });
     }
 
     res.json({

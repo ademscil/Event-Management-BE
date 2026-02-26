@@ -47,7 +47,9 @@ class BulkImportService {
 
     try {
       // Get column mapping for entity type
+      logger.info('Getting entity config for:', entityType);
       const config = this._getEntityConfig(entityType);
+      logger.info('Config retrieved:', config);
       
       // Parse Excel file
       logger.info('Starting bulk import', { entityType });
@@ -172,6 +174,9 @@ class BulkImportService {
         return await this._importFunctionAppMapping(data, request, options);
       case 'AppDeptMapping':
         return await this._importAppDeptMapping(data, request, options);
+      case 'users':
+      case 'User':
+        return await this._importUser(data, request, options);
       default:
         throw new Error(`Unknown entity type: ${entityType}`);
     }
@@ -454,6 +459,49 @@ class BulkImportService {
   }
 
   /**
+   * Import User
+   * @private
+   */
+  async _importUser(data, request, options) {
+    const bcrypt = require('bcrypt');
+    
+    const existing = await request
+      .input('username', sql.NVarChar(50), data.username)
+      .query('SELECT UserId FROM Users WHERE Username = @username');
+
+    if (existing.recordset.length > 0) {
+      if (options.skipDuplicates) {
+        return { action: 'skipped' };
+      } else {
+        throw new Error(`User with username '${data.username}' already exists`);
+      }
+    }
+
+    const useLdap = data.useLdap === 'true' || data.useLdap === true;
+    const isActive = data.isActive === 'true' || data.isActive === true;
+    let passwordHash = null;
+
+    if (!useLdap && data.password) {
+      passwordHash = await bcrypt.hash(data.password, 10);
+    }
+
+    await request
+      .input('npk', sql.NVarChar(50), data.npk || null)
+      .input('displayName', sql.NVarChar(200), data.displayName)
+      .input('email', sql.NVarChar(200), data.email)
+      .input('role', sql.NVarChar(50), data.role)
+      .input('useLdap', sql.Bit, useLdap)
+      .input('isActive', sql.Bit, isActive)
+      .input('passwordHash', sql.NVarChar(255), passwordHash)
+      .query(`
+        INSERT INTO Users (Username, NPK, DisplayName, Email, Role, UseLDAP, IsActive, PasswordHash, CreatedAt)
+        VALUES (@username, @npk, @displayName, @email, @role, @useLdap, @isActive, @passwordHash, GETDATE())
+      `);
+
+    return { action: 'imported' };
+  }
+
+  /**
    * Import Application-Department Mapping
    * @private
    */
@@ -564,6 +612,19 @@ class BulkImportService {
         columnMapping: {
           'Application Code': 'applicationCode',
           'Department Code': 'departmentCode'
+        }
+      },
+      users: {
+        entityType: 'users',
+        columnMapping: {
+          'Username': 'username',
+          'NPK': 'npk',
+          'DisplayName': 'displayName',
+          'Email': 'email',
+          'Role': 'role',
+          'IsActive': 'isActive',
+          'UseLDAP': 'useLdap',
+          'Password': 'password'
         }
       }
     };

@@ -18,14 +18,17 @@ const createApplicationValidation = [
   body('description')
     .optional()
     .trim()
-    .isLength({ max: 500 }).withMessage('Description must not exceed 500 characters')
+    .isLength({ max: 500 }).withMessage('Description must not exceed 500 characters'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
  * Validation rules for updating an application
  */
 const updateApplicationValidation = [
-  param('id').isInt().withMessage('Application ID must be an integer'),
+  param('id').isUUID().withMessage('Application ID must be a valid UUID'),
   body('code')
     .optional()
     .trim()
@@ -90,7 +93,8 @@ async function createApplication(req, res) {
  */
 async function getApplications(req, res) {
   try {
-    const applications = await applicationService.getApplications();
+    const includeInactive = req.query.includeInactive === 'true';
+    const applications = await applicationService.getApplications({ includeInactive });
 
     res.json({
       success: true,
@@ -114,7 +118,7 @@ async function getApplications(req, res) {
  */
 async function getApplicationById(req, res) {
   try {
-    const applicationId = parseInt(req.params.id);
+    const applicationId = req.params.id;
     const application = await applicationService.getApplicationById(applicationId);
 
     if (!application) {
@@ -154,7 +158,7 @@ async function updateApplication(req, res) {
       });
     }
 
-    const applicationId = parseInt(req.params.id);
+    const applicationId = req.params.id;
     const updates = req.body;
 
     const result = await applicationService.updateApplication(applicationId, updates);
@@ -189,7 +193,7 @@ async function updateApplication(req, res) {
  */
 async function deleteApplication(req, res) {
   try {
-    const applicationId = parseInt(req.params.id);
+    const applicationId = req.params.id;
     const result = await applicationService.deleteApplication(applicationId);
 
     if (!result.success) {

@@ -134,12 +134,18 @@ function configureRateLimit() {
  * @returns {Function} Rate limit middleware
  */
 function configureAuthRateLimit() {
+  const isProduction = config.isProduction();
+  const maxAttempts = isProduction ? 5 : 100;
+  const windowMs = 15 * 60 * 1000;
+
   return rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // 5 attempts per window
+    windowMs,
+    max: maxAttempts,
     message: {
       error: 'Too Many Login Attempts',
-      message: 'Too many login attempts, please try again after 15 minutes'
+      message: isProduction
+        ? 'Too many login attempts, please try again after 15 minutes'
+        : 'Too many login attempts in development mode, please retry shortly'
     },
     standardHeaders: true,
     legacyHeaders: false,
@@ -152,7 +158,9 @@ function configureAuthRateLimit() {
       
       res.status(429).json({
         error: 'Too Many Login Attempts',
-        message: 'Too many login attempts, please try again after 15 minutes'
+        message: isProduction
+          ? 'Too many login attempts, please try again after 15 minutes'
+          : 'Too many login attempts in development mode, please retry shortly'
       });
     }
   });
@@ -277,3 +285,4 @@ module.exports = {
   validateSecurityConfig,
   applySecurityMiddleware
 };
+
