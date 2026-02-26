@@ -247,6 +247,10 @@ class TemplateParser {
       case 'AppDeptMapping':
         errors.push(...this._validateAppDeptMapping(record));
         break;
+      case 'users':
+      case 'User':
+        errors.push(...this._validateUser(record));
+        break;
       default:
         errors.push(`Unknown entity type: ${entityType}`);
     }
@@ -404,6 +408,39 @@ class TemplateParser {
     // Validate application code
     if (!record.applicationCode || record.applicationCode.trim() === '') {
       errors.push('Application Code is required');
+    }
+
+    return errors;
+  }
+
+  /**
+   * Validate User record
+   * @private
+   */
+  _validateUser(record) {
+    const errors = [];
+    
+    if (!record.username || record.username.trim() === '') {
+      errors.push('Username is required');
+    }
+
+    if (!record.displayName || record.displayName.trim() === '') {
+      errors.push('DisplayName is required');
+    }
+
+    if (!record.email || record.email.trim() === '') {
+      errors.push('Email is required');
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.email)) {
+      errors.push('Invalid email format');
+    }
+
+    if (!record.role || !['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead'].includes(record.role)) {
+      errors.push('Role must be SuperAdmin, AdminEvent, ITLead, or DepartmentHead');
+    }
+
+    const useLdap = record.useLdap === 'true' || record.useLdap === true;
+    if (!useLdap && (!record.password || record.password.length < 8)) {
+      errors.push('Password must be at least 8 characters for non-LDAP users');
     }
 
     return errors;

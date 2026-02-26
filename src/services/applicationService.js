@@ -143,6 +143,10 @@ class ApplicationService {
         throw new ValidationError('Name is required and must be 1-200 characters');
       }
 
+      if (data.isActive !== undefined && typeof data.isActive !== 'boolean') {
+        throw new ValidationError('isActive must be boolean');
+      }
+
       // Build update query
       const updateFields = [];
       const request = pool.request();
@@ -159,6 +163,10 @@ class ApplicationService {
       if (data.description !== undefined) {
         updateFields.push('Description = @description');
         request.input('description', sql.NVarChar(sql.MAX), data.description);
+      }
+      if (data.isActive !== undefined) {
+        updateFields.push('IsActive = @isActive');
+        request.input('isActive', sql.Bit, data.isActive);
       }
 
       if (updateFields.length === 0) {
@@ -298,4 +306,10 @@ class ApplicationService {
   }
 }
 
-module.exports = { ApplicationService, ValidationError, ConflictError, NotFoundError };
+const applicationService = new ApplicationService();
+
+module.exports = applicationService;
+module.exports.ApplicationService = ApplicationService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;

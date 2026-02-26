@@ -17,14 +17,14 @@ const createDepartmentValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('divisionId')
     .notEmpty().withMessage('Division ID is required')
-    .isInt().withMessage('Division ID must be an integer')
+    .isUUID().withMessage('Division ID must be a valid UUID')
 ];
 
 /**
  * Validation rules for updating a department
  */
 const updateDepartmentValidation = [
-  param('id').isInt().withMessage('Department ID must be an integer'),
+  param('id').isUUID().withMessage('Department ID must be a valid UUID'),
   body('code')
     .optional()
     .trim()
@@ -36,7 +36,10 @@ const updateDepartmentValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('divisionId')
     .optional()
-    .isInt().withMessage('Division ID must be an integer')
+    .isUUID().withMessage('Division ID must be a valid UUID'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -89,12 +92,13 @@ async function createDepartment(req, res) {
 async function getDepartments(req, res) {
   try {
     const { divisionId } = req.query;
+    const includeInactive = req.query.includeInactive === 'true';
 
     let departments;
     if (divisionId) {
-      departments = await departmentService.getDepartmentsByDivision(parseInt(divisionId));
+      departments = await departmentService.getDepartmentsByDivision(divisionId, { includeInactive });
     } else {
-      departments = await departmentService.getAllDepartments();
+      departments = await departmentService.getDepartments({ includeInactive });
     }
 
     res.json({
@@ -119,7 +123,7 @@ async function getDepartments(req, res) {
  */
 async function getDepartmentById(req, res) {
   try {
-    const departmentId = parseInt(req.params.id);
+    const departmentId = req.params.id;
     const department = await departmentService.getDepartmentById(departmentId);
 
     if (!department) {
@@ -159,7 +163,7 @@ async function updateDepartment(req, res) {
       });
     }
 
-    const departmentId = parseInt(req.params.id);
+    const departmentId = req.params.id;
     const updates = req.body;
 
     const result = await departmentService.updateDepartment(departmentId, updates);
@@ -194,7 +198,7 @@ async function updateDepartment(req, res) {
  */
 async function deleteDepartment(req, res) {
   try {
-    const departmentId = parseInt(req.params.id);
+    const departmentId = req.params.id;
     const result = await departmentService.deleteDepartment(departmentId);
 
     if (!result.success) {
@@ -227,3 +231,4 @@ module.exports = {
   createDepartmentValidation,
   updateDepartmentValidation
 };
+

@@ -24,10 +24,10 @@ const createSurveyValidation = [
     .trim()
     .isLength({ max: 1000 }).withMessage('Description must not exceed 1000 characters'),
   body('startDate')
-    .notEmpty().withMessage('Start date is required')
+    .optional()
     .isISO8601().withMessage('Invalid start date format'),
   body('endDate')
-    .notEmpty().withMessage('End date is required')
+    .optional()
     .isISO8601().withMessage('Invalid end date format'),
   body('status')
     .optional()
@@ -37,7 +37,13 @@ const createSurveyValidation = [
     .isInt({ min: 0 }).withMessage('Target respondents must be a positive integer'),
   body('targetScore')
     .optional()
-    .isFloat({ min: 0, max: 10 }).withMessage('Target score must be between 0 and 10')
+    .isFloat({ min: 0, max: 10 }).withMessage('Target score must be between 0 and 10'),
+  body('assignedAdminIds')
+    .optional()
+    .isArray({ min: 1 }).withMessage('assignedAdminIds must be a non-empty array'),
+  body('assignedAdminIds.*')
+    .optional()
+    .isUUID().withMessage('Each assigned admin ID must be a valid UUID'),
 ];
 
 /**
@@ -67,7 +73,13 @@ const updateSurveyValidation = [
     .isInt({ min: 0 }).withMessage('Target respondents must be a positive integer'),
   body('targetScore')
     .optional()
-    .isFloat({ min: 0, max: 10 }).withMessage('Target score must be between 0 and 10')
+    .isFloat({ min: 0, max: 10 }).withMessage('Target score must be between 0 and 10'),
+  body('assignedAdminIds')
+    .optional()
+    .isArray({ min: 1 }).withMessage('assignedAdminIds must be a non-empty array'),
+  body('assignedAdminIds.*')
+    .optional()
+    .isUUID().withMessage('Each assigned admin ID must be a valid UUID'),
 ];
 
 /**
@@ -117,11 +129,15 @@ async function createSurvey(req, res) {
 async function getSurveys(req, res) {
   try {
     const { status, assignedAdminId, search } = req.query;
-    
+
     const filter = {};
     if (status) filter.status = status;
-    if (assignedAdminId) filter.assignedAdminId = assignedAdminId;
     if (search) filter.search = search;
+    if (req.user?.role === 'AdminEvent') {
+      filter.assignedAdminId = req.user.userId;
+    } else if (assignedAdminId) {
+      filter.assignedAdminId = assignedAdminId;
+    }
 
     const surveys = await surveyService.getSurveys(filter);
 
@@ -622,3 +638,8 @@ module.exports = {
   updateSurveyValidation,
   upload
 };
+
+
+
+
+

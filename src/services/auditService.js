@@ -1,5 +1,5 @@
 const sql = require('mssql');
-const { getPool } = require('../database/connection');
+const db = require('../database/connection');
 const logger = require('../config/logger');
 
 /**
@@ -51,7 +51,7 @@ class AuditService {
                 throw new Error(`Invalid action type: ${logData.action}. Must be one of: ${this.validActions.join(', ')}`);
             }
 
-            const pool = await getPool();
+            const pool = await db.getPool();
             
             // Convert objects to JSON strings
             const oldValuesJson = logData.oldValues ? JSON.stringify(logData.oldValues) : null;
@@ -332,7 +332,7 @@ class AuditService {
      */
     async getAuditLogs(filter = {}) {
         try {
-            const pool = await getPool();
+            const pool = await db.getPool();
             const page = filter.page || 1;
             const pageSize = filter.pageSize || 50;
             const offset = (page - 1) * pageSize;
@@ -448,7 +448,7 @@ class AuditService {
      */
     async getEntityHistory(entityType, entityId) {
         try {
-            const pool = await getPool();
+            const pool = await db.getPool();
 
             const result = await pool.request()
                 .input('entityType', sql.NVarChar(100), entityType)
@@ -506,7 +506,7 @@ class AuditService {
      */
     async getAuditStatistics(filter = {}) {
         try {
-            const pool = await getPool();
+            const pool = await db.getPool();
             const request = pool.request();
 
             let whereConditions = [];
@@ -561,3 +561,4 @@ class AuditService {
 }
 
 module.exports = new AuditService();
+

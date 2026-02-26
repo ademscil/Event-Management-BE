@@ -168,6 +168,10 @@ class DepartmentService {
         throw new ValidationError('Name is required and must be 1-200 characters');
       }
 
+      if (data.isActive !== undefined && typeof data.isActive !== 'boolean') {
+        throw new ValidationError('isActive must be boolean');
+      }
+
       // Build update query
       const updateFields = [];
       const request = pool.request();
@@ -184,6 +188,10 @@ class DepartmentService {
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);
+      }
+      if (data.isActive !== undefined) {
+        updateFields.push('IsActive = @isActive');
+        request.input('isActive', sql.Bit, data.isActive);
       }
 
       if (updateFields.length === 0) {
@@ -297,6 +305,15 @@ class DepartmentService {
    * @param {boolean} [filter.includeInactive=false] - Include inactive Departments
    * @returns {Promise<Array>} Array of Departments
    */
+
+  /**
+   * Backward-compatible alias
+   * @param {Object} [filter] - Filter options
+   * @returns {Promise<Array>} Array of Departments
+   */
+  async getAllDepartments(filter = {}) {
+    return this.getDepartments(filter);
+  }
   async getDepartments(filter = {}) {
     try {
       const pool = await db.getPool();
@@ -384,4 +401,11 @@ class DepartmentService {
   }
 }
 
-module.exports = { DepartmentService, ValidationError, ConflictError, NotFoundError };
+const departmentService = new DepartmentService();
+
+module.exports = departmentService;
+module.exports.DepartmentService = DepartmentService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;
+

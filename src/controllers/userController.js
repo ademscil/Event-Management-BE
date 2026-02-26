@@ -12,11 +12,6 @@ const createUserValidation = [
     .notEmpty().withMessage('Username is required')
     .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
     .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
-  body('npk')
-    .optional()
-    .trim()
-    .isLength({ max: 20 }).withMessage('NPK max 20 digits')
-    .matches(/^[0-9]*$/).withMessage('NPK must be numeric'),
   body('displayName')
     .trim()
     .notEmpty().withMessage('Display name is required')
@@ -34,6 +29,10 @@ const createUserValidation = [
   body('password')
     .optional()
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 }).withMessage('NPK must be between 1 and 50 characters'),
   body('businessUnitId')
     .optional()
     .isUUID().withMessage('Business Unit ID must be a valid UUID'),
@@ -53,16 +52,6 @@ const createUserValidation = [
  */
 const updateUserValidation = [
   param('id').isUUID().withMessage('User ID must be a valid UUID'),
-  body('username')
-    .optional()
-    .trim()
-    .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
-  body('npk')
-    .optional()
-    .trim()
-    .isLength({ max: 20 }).withMessage('NPK max 20 digits')
-    .matches(/^[0-9]*$/).withMessage('NPK must be numeric'),
   body('displayName')
     .optional()
     .trim()
@@ -74,6 +63,13 @@ const updateUserValidation = [
   body('role')
     .optional()
     .isIn(['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead']).withMessage('Invalid role'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be a boolean'),
+  body('npk')
+    .optional()
+    .trim()
+    .isLength({ min: 1, max: 50 }).withMessage('NPK must be between 1 and 50 characters'),
   body('businessUnitId')
     .optional()
     .isUUID().withMessage('Business Unit ID must be a valid UUID'),
@@ -342,11 +338,11 @@ async function setUserPassword(req, res) {
 async function downloadUserTemplate(req, res) {
   try {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('MasterUserTemplate');
+    const worksheet = workbook.addWorksheet('Users');
 
     worksheet.columns = [
       { header: 'Username', key: 'username', width: 20 },
-      { header: 'NPK', key: 'npk', width: 14 },
+      { header: 'NPK', key: 'npk', width: 15 },
       { header: 'DisplayName', key: 'displayName', width: 28 },
       { header: 'Email', key: 'email', width: 32 },
       { header: 'Role', key: 'role', width: 18 },
@@ -356,14 +352,36 @@ async function downloadUserTemplate(req, res) {
     ];
 
     worksheet.addRow({
-      username: 'superadmin',
+      username: 'firman',
       npk: '0676',
       displayName: 'Firman',
       email: 'firman@company.co.id',
       role: 'AdminEvent',
       isActive: 'true',
       useLdap: 'false',
-      password: 'admin123'
+      password: 'password123'
+    });
+
+    worksheet.addRow({
+      username: 'budi',
+      npk: '0677',
+      displayName: 'Budi Santoso',
+      email: 'budi@company.co.id',
+      role: 'ITLead',
+      isActive: 'true',
+      useLdap: 'false',
+      password: 'password123'
+    });
+
+    worksheet.addRow({
+      username: 'siti',
+      npk: '0678',
+      displayName: 'Siti Nurhaliza',
+      email: 'siti@company.co.id',
+      role: 'DepartmentHead',
+      isActive: 'true',
+      useLdap: 'false',
+      password: 'password123'
     });
 
     worksheet.getRow(1).font = { bold: true };
@@ -385,10 +403,99 @@ async function downloadUserTemplate(req, res) {
   }
 }
 
+async function downloadUserList(req, res) {
+  try {
+    const userService = require('../services/userService');
+    const users = await userService.getUsers({ includeInactive: true });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Users');
+
+    worksheet.columns = [
+      { header: 'Username', key: 'username', width: 20 },
+      { header: 'NPK', key: 'npk', width: 15 },
+      { header: 'DisplayName', key: 'displayName', width: 28 },
+      { header: 'Email', key: 'email', width: 32 },
+      { header: 'Role', key: 'role', width: 18 },
+      { header: 'Business Unit', key: 'businessUnit', width: 25 },
+      { header: 'Division', key: 'division', width: 25 },
+      { header: 'Department', key: 'department', width: 25 },
+      { header: 'IsActive', key: 'isActive', width: 12 },
+      { header: 'UseLDAP', key: 'useLdap', width: 12 }
+    ];
+
+    users.forEach(user => {
+      worksheet.addRow({
+        username: user.Username,
+        npk: user.NPK || '',
+        displayName: user.DisplayName,
+        email: user.Email,
+        role: user.Role,
+        businessUnit: user.BusinessUnitName || '',
+        division: user.DivisionName || '',
+        department: user.DepartmentName || '',
+        isActive: user.IsActive ? 'true' : 'false',
+        useLdap: user.UseLDAP ? 'true' : 'false'
+      });
+    });
+
+    worksheet.getRow(1).font = { bold: true };
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', 'attachment; filename="user-list.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download user list controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while generating user list'
+    });
+  }
+}
+
+async function uploadUserFile(req, res) {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'File is required'
+      });
+    }
+
+    const { BulkImportService } = require('../services/bulkImportService');
+    const service = new BulkImportService();
+    const result = await service.importData(req.file.buffer, 'users', {
+      skipDuplicates: true,
+      updateExisting: false
+    });
+
+    res.json({
+      success: result.success || result.imported > 0,
+      message: `Import completed. Imported: ${result.imported}, Failed: ${result.failed}`,
+      imported: result.imported,
+      failed: result.failed,
+      errors: result.errors
+    });
+  } catch (error) {
+    logger.error('Upload user file controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message || 'An error occurred while uploading file'
+    });
+  }
+}
+
 module.exports = {
   createUser,
   getUsers,
   downloadUserTemplate,
+  downloadUserList,
+  uploadUserFile,
   getUserById,
   updateUser,
   deactivateUser,
@@ -398,8 +505,4 @@ module.exports = {
   updateUserValidation,
   toggleLDAPValidation,
   setPasswordValidation
-};
-
-
-
-
+};

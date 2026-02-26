@@ -4,7 +4,7 @@
  */
 
 const sql = require('mssql');
-const { getPool } = require('../database/connection');
+const db = require('../database/connection');
 const logger = require('../config/logger');
 
 /**
@@ -58,7 +58,7 @@ class ApprovalService {
 
   async initialize() {
     if (!this.pool) {
-      this.pool = await getPool();
+      this.pool = await db.getPool();
     }
   }
 
@@ -825,3 +825,4 @@ module.exports.ApprovalAction = ApprovalAction;
 module.exports.ValidationError = ValidationError;
 module.exports.NotFoundError = NotFoundError;
 module.exports.UnauthorizedError = UnauthorizedError;
+

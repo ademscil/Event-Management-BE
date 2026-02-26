@@ -168,6 +168,10 @@ class DivisionService {
         throw new ValidationError('Name is required and must be 1-200 characters');
       }
 
+      if (data.isActive !== undefined && typeof data.isActive !== 'boolean') {
+        throw new ValidationError('isActive must be boolean');
+      }
+
       // Build update query
       const updateFields = [];
       const request = pool.request();
@@ -184,6 +188,10 @@ class DivisionService {
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);
+      }
+      if (data.isActive !== undefined) {
+        updateFields.push('IsActive = @isActive');
+        request.input('isActive', sql.Bit, data.isActive);
       }
 
       if (updateFields.length === 0) {
@@ -288,6 +296,15 @@ class DivisionService {
    * @param {boolean} [filter.includeInactive=false] - Include inactive Divisions
    * @returns {Promise<Array>} Array of Divisions
    */
+
+  /**
+   * Backward-compatible alias
+   * @param {Object} [filter] - Filter options
+   * @returns {Promise<Array>} Array of Divisions
+   */
+  async getAllDivisions(filter = {}) {
+    return this.getDivisions(filter);
+  }
   async getDivisions(filter = {}) {
     try {
       const pool = await db.getPool();
@@ -334,4 +351,11 @@ class DivisionService {
   }
 }
 
-module.exports = { DivisionService, ValidationError, ConflictError, NotFoundError };
+const divisionService = new DivisionService();
+
+module.exports = divisionService;
+module.exports.DivisionService = DivisionService;
+module.exports.ValidationError = ValidationError;
+module.exports.ConflictError = ConflictError;
+module.exports.NotFoundError = NotFoundError;
+

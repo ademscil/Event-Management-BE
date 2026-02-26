@@ -38,11 +38,98 @@ class UserService {
   constructor() {
     this.repository = new BaseRepository('Users', 'UserId');
     this.saltRounds = 10;
+    this.corporateHoName = 'Corporate HO';
+  }
+
+  /**
+   * Ensure non-Corporate-HO org hierarchy:
+   * Division and Department must follow Business Unit name.
+   */
+  async ensureNonCorporateOrgHierarchy(pool, businessUnit) {
+    const businessUnitId = businessUnit.BusinessUnitId;
+    const businessUnitCode = (businessUnit.Code || '').trim();
+    const businessUnitName = (businessUnit.Name || '').trim();
+    const safeName = businessUnitName || businessUnitCode || 'Business Unit';
+    const divisionCode = `DIVBU${businessUnitId.replace(/-/g, '').slice(-8)}`;
+    const departmentCode = `DEPTBU${businessUnitId.replace(/-/g, '').slice(-8)}`;
+
+    let division = await pool.request()
+      .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
+      .input('name', sql.NVarChar(200), safeName)
+      .query(`
+        SELECT TOP 1 DivisionId, Code, Name
+        FROM Divisions
+        WHERE BusinessUnitId = @businessUnitId
+          AND Name = @name
+        ORDER BY IsActive DESC, CreatedAt ASC
+      `);
+
+    if (division.recordset.length === 0) {
+      division = await pool.request()
+        .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
+        .input('code', sql.NVarChar(20), divisionCode)
+        .input('name', sql.NVarChar(200), safeName)
+        .query(`
+          INSERT INTO Divisions (BusinessUnitId, Code, Name, IsActive, CreatedAt)
+          OUTPUT INSERTED.DivisionId, INSERTED.Code, INSERTED.Name
+          VALUES (@businessUnitId, @code, @name, 1, GETDATE())
+        `);
+    } else {
+      await pool.request()
+        .input('divisionId', sql.UniqueIdentifier, division.recordset[0].DivisionId)
+        .query(`
+          UPDATE Divisions
+          SET IsActive = 1,
+              UpdatedAt = GETDATE()
+          WHERE DivisionId = @divisionId
+            AND IsActive = 0
+        `);
+    }
+
+    const divisionId = division.recordset[0].DivisionId;
+    let department = await pool.request()
+      .input('divisionId', sql.UniqueIdentifier, divisionId)
+      .input('name', sql.NVarChar(200), safeName)
+      .query(`
+        SELECT TOP 1 DepartmentId, Code, Name
+        FROM Departments
+        WHERE DivisionId = @divisionId
+          AND Name = @name
+        ORDER BY IsActive DESC, CreatedAt ASC
+      `);
+
+    if (department.recordset.length === 0) {
+      department = await pool.request()
+        .input('divisionId', sql.UniqueIdentifier, divisionId)
+        .input('code', sql.NVarChar(20), departmentCode)
+        .input('name', sql.NVarChar(200), safeName)
+        .query(`
+          INSERT INTO Departments (DivisionId, Code, Name, IsActive, CreatedAt)
+          OUTPUT INSERTED.DepartmentId, INSERTED.Code, INSERTED.Name
+          VALUES (@divisionId, @code, @name, 1, GETDATE())
+        `);
+    } else {
+      await pool.request()
+        .input('departmentId', sql.UniqueIdentifier, department.recordset[0].DepartmentId)
+        .query(`
+          UPDATE Departments
+          SET IsActive = 1,
+              UpdatedAt = GETDATE()
+          WHERE DepartmentId = @departmentId
+            AND IsActive = 0
+        `);
+    }
+
+    return {
+      businessUnitId,
+      divisionId,
+      departmentId: department.recordset[0].DepartmentId
+    };
   }
 
   /**
    * Validate hierarchy Business Unit -> Division -> Department.
-   * When one field is provided, all fields must be provided.
+   * For non-Corporate HO, Division and Department are auto-resolved by BU name.
    */
   async validateOrgHierarchy(pool, businessUnitId, divisionId, departmentId) {
     const hasAnyField =
@@ -62,20 +149,31 @@ class UserService {
     const normalizedDivisionId = divisionId ?? null;
     const normalizedDepartmentId = departmentId ?? null;
 
-    if (!normalizedBusinessUnitId || !normalizedDivisionId || !normalizedDepartmentId) {
-      throw new ValidationError('Business Unit, Division, and Department must be filled together');
+    if (!normalizedBusinessUnitId) {
+      throw new ValidationError('Business Unit is required');
     }
 
     const businessUnitCheck = await pool.request()
       .input('businessUnitId', sql.UniqueIdentifier, normalizedBusinessUnitId)
       .query(`
-        SELECT BusinessUnitId
+        SELECT BusinessUnitId, Code, Name
         FROM BusinessUnits
         WHERE BusinessUnitId = @businessUnitId AND IsActive = 1
       `);
 
     if (businessUnitCheck.recordset.length === 0) {
       throw new ValidationError('Business Unit not found or inactive');
+    }
+
+    const businessUnit = businessUnitCheck.recordset[0];
+    const isCorporateHo = (businessUnit.Name || '').trim().toLowerCase() === this.corporateHoName.toLowerCase();
+
+    if (!isCorporateHo) {
+      return this.ensureNonCorporateOrgHierarchy(pool, businessUnit);
+    }
+
+    if (!normalizedDivisionId || !normalizedDepartmentId) {
+      throw new ValidationError('Division and Department are required for Corporate HO');
     }
 
     const divisionCheck = await pool.request()
@@ -137,16 +235,6 @@ class UserService {
   }
 
   /**
-   * Validate NPK format
-   * @param {string} npk - NPK
-   * @returns {boolean} True if valid
-   */
-  validateNpk(npk) {
-    const npkRegex = /^[0-9]{1,20}$/;
-    return npkRegex.test(npk);
-  }
-
-  /**
    * Create a new user
    * @param {Object} data - User data
    * @param {string} data.username - Username (3-50 chars, alphanumeric + underscore)
@@ -162,12 +250,6 @@ class UserService {
       // Validate username
       if (!this.validateUsername(data.username)) {
         throw new ValidationError('Username must be 3-50 characters, alphanumeric and underscore only');
-      }
-
-      // Validate NPK
-      const normalizedNpk = typeof data.npk === 'string' ? data.npk.trim() : null;
-      if (normalizedNpk && !this.validateNpk(normalizedNpk)) {
-        throw new ValidationError('NPK must be numeric and up to 20 digits');
       }
 
       // Validate email
@@ -224,8 +306,8 @@ class UserService {
       // Create user
       const result = await pool.request()
         .input('username', sql.NVarChar(50), data.username)
-        .input('npk', sql.NVarChar(50), normalizedNpk || null)
         .input('displayName', sql.NVarChar(200), data.displayName)
+        .input('npk', sql.NVarChar(50), data.npk || null)
         .input('email', sql.NVarChar(200), data.email)
         .input('role', sql.NVarChar(50), data.role)
         .input('useLDAP', sql.Bit, useLDAP)
@@ -274,7 +356,7 @@ class UserService {
       const userCheck = await pool.request()
         .input('userId', sql.UniqueIdentifier, userId)
         .query(`
-          SELECT UserId, Username, BusinessUnitId, DivisionId, DepartmentId
+          SELECT UserId, Username, NPK, BusinessUnitId, DivisionId, DepartmentId
           FROM Users
           WHERE UserId = @userId
         `);
@@ -283,36 +365,9 @@ class UserService {
         throw new NotFoundError('User not found');
       }
 
-      // Validate NPK
-      const normalizedNpk = typeof data.npk === 'string' ? data.npk.trim() : null;
-      if (normalizedNpk && !this.validateNpk(normalizedNpk)) {
-        throw new ValidationError('NPK must be numeric and up to 20 digits');
-      }
-
       // Validate email if provided
-      if (data.username && !this.validateUsername(data.username)) {
-        throw new ValidationError('Username must be 3-50 characters, alphanumeric and underscore only');
-      }
-
-      const normalizedNpkForUpdate = data.npk === undefined ? undefined : (typeof data.npk === 'string' ? data.npk.trim() : '');
-      if (normalizedNpkForUpdate && !this.validateNpk(normalizedNpkForUpdate)) {
-        throw new ValidationError('NPK must be numeric and up to 20 digits');
-      }
-
       if (data.email && !this.validateEmail(data.email)) {
         throw new ValidationError('Invalid email format');
-      }
-
-      // Check for duplicate username if username is being changed
-      if (data.username) {
-        const usernameCheck = await pool.request()
-          .input('username', sql.NVarChar(50), data.username)
-          .input('userId', sql.UniqueIdentifier, userId)
-          .query('SELECT UserId FROM Users WHERE Username = @username AND UserId != @userId');
-
-        if (usernameCheck.recordset.length > 0) {
-          throw new ConflictError(`Username '' already exists`);
-        }
       }
 
       // Check for duplicate email if email is being changed
@@ -354,13 +409,9 @@ class UserService {
       const request = pool.request();
       request.input('userId', sql.UniqueIdentifier, userId);
 
-      if (data.username !== undefined) {
-        updateFields.push('Username = @username');
-        request.input('username', sql.NVarChar(50), data.username);
-      }
       if (data.npk !== undefined) {
         updateFields.push('NPK = @npk');
-        request.input('npk', sql.NVarChar(50), normalizedNpkForUpdate || null);
+        request.input('npk', sql.NVarChar(50), data.npk || null);
       }
       if (data.displayName !== undefined) {
         updateFields.push('DisplayName = @displayName');
@@ -385,6 +436,10 @@ class UserService {
       if (data.departmentId !== undefined) {
         updateFields.push('DepartmentId = @departmentId');
         request.input('departmentId', sql.UniqueIdentifier, data.departmentId);
+      }
+      if (data.isActive !== undefined) {
+        updateFields.push('IsActive = @isActive');
+        request.input('isActive', sql.Bit, data.isActive);
       }
 
       if (updateFields.length === 0) {
@@ -464,9 +519,9 @@ class UserService {
         .input('userId', sql.UniqueIdentifier, userId)
         .query(`
           SELECT
-          u.UserId,
-          u.Username,
-          u.NPK,
+            u.UserId,
+            u.Username,
+            u.NPK,
             u.DisplayName,
             u.Email,
             u.Role,
@@ -524,7 +579,7 @@ class UserService {
       }
 
       if (filter.search) {
-        conditions.push('(u.NPK LIKE @search OR u.Username LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)');
+        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)");
         request.input('search', sql.NVarChar(210), `%${filter.search}%`);
       }
 
@@ -537,8 +592,8 @@ class UserService {
         SELECT
           u.UserId,
           u.Username,
-          u.NPK,
-          u.DisplayName,
+            u.NPK,
+            u.DisplayName,
           u.Email,
           u.Role,
           u.UseLDAP,
@@ -721,8 +776,4 @@ module.exports = userService;
 module.exports.UserService = UserService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
-module.exports.NotFoundError = NotFoundError;
-
-
-
-
+module.exports.NotFoundError = NotFoundError;

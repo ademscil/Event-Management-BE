@@ -21,7 +21,7 @@ const createBusinessUnitValidation = [
  * Validation rules for updating a business unit
  */
 const updateBusinessUnitValidation = [
-  param('id').isInt().withMessage('Business Unit ID must be an integer'),
+  param('id').isUUID().withMessage('Business Unit ID must be a valid UUID'),
   body('code')
     .optional()
     .trim()
@@ -30,7 +30,10 @@ const updateBusinessUnitValidation = [
   body('name')
     .optional()
     .trim()
-    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters')
+    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
+  body('isActive')
+    .optional()
+    .isBoolean().withMessage('isActive must be boolean')
 ];
 
 /**
@@ -82,7 +85,8 @@ async function createBusinessUnit(req, res) {
  */
 async function getBusinessUnits(req, res) {
   try {
-    const businessUnits = await businessUnitService.getBusinessUnits();
+    const includeInactive = req.query.includeInactive === 'true';
+    const businessUnits = await businessUnitService.getBusinessUnits({ includeInactive });
 
     res.json({
       success: true,
@@ -106,7 +110,7 @@ async function getBusinessUnits(req, res) {
  */
 async function getBusinessUnitById(req, res) {
   try {
-    const buId = parseInt(req.params.id);
+    const buId = req.params.id;
     const businessUnit = await businessUnitService.getBusinessUnitById(buId);
 
     if (!businessUnit) {
@@ -146,7 +150,7 @@ async function updateBusinessUnit(req, res) {
       });
     }
 
-    const buId = parseInt(req.params.id);
+    const buId = req.params.id;
     const updates = req.body;
 
     const result = await businessUnitService.updateBusinessUnit(buId, updates);
@@ -181,7 +185,7 @@ async function updateBusinessUnit(req, res) {
  */
 async function deleteBusinessUnit(req, res) {
   try {
-    const buId = parseInt(req.params.id);
+    const buId = req.params.id;
     const result = await businessUnitService.deleteBusinessUnit(buId);
 
     if (!result.success) {
@@ -214,3 +218,4 @@ module.exports = {
   createBusinessUnitValidation,
   updateBusinessUnitValidation
 };
+
