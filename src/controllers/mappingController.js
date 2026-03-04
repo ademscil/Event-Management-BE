@@ -9,13 +9,16 @@ const logger = require('../config/logger');
 const createFunctionAppMappingValidation = [
   body('functionId')
     .notEmpty().withMessage('Function ID is required')
-    .isInt().withMessage('Function ID must be an integer'),
+    .isUUID().withMessage('Function ID must be a valid UUID'),
   body('applicationId')
     .optional()
-    .isInt().withMessage('Application ID must be an integer'),
+    .isUUID().withMessage('Application ID must be a valid UUID'),
   body('applicationIds')
     .optional()
-    .isArray().withMessage('Application IDs must be an array')
+    .isArray().withMessage('Application IDs must be an array'),
+  body('applicationIds.*')
+    .optional()
+    .isUUID().withMessage('Application IDs must contain valid UUID values')
 ];
 
 /**
@@ -24,13 +27,16 @@ const createFunctionAppMappingValidation = [
 const createAppDeptMappingValidation = [
   body('departmentId')
     .notEmpty().withMessage('Department ID is required')
-    .isInt().withMessage('Department ID must be an integer'),
+    .isUUID().withMessage('Department ID must be a valid UUID'),
   body('applicationId')
     .optional()
-    .isInt().withMessage('Application ID must be an integer'),
+    .isUUID().withMessage('Application ID must be a valid UUID'),
   body('applicationIds')
     .optional()
-    .isArray().withMessage('Application IDs must be an array')
+    .isArray().withMessage('Application IDs must be an array'),
+  body('applicationIds.*')
+    .optional()
+    .isUUID().withMessage('Application IDs must contain valid UUID values')
 ];
 
 /**
@@ -136,7 +142,7 @@ async function getFunctionAppMappings(req, res) {
  */
 async function getApplicationsByFunction(req, res) {
   try {
-    const functionId = parseInt(req.params.functionId);
+    const functionId = req.params.functionId;
     const applications = await mappingService.getApplicationsByFunction(functionId);
 
     res.json({
@@ -161,7 +167,7 @@ async function getApplicationsByFunction(req, res) {
  */
 async function getFunctionsByApplication(req, res) {
   try {
-    const applicationId = parseInt(req.params.applicationId);
+    const applicationId = req.params.applicationId;
     const functions = await mappingService.getFunctionsByApplication(applicationId);
 
     res.json({
@@ -186,7 +192,7 @@ async function getFunctionsByApplication(req, res) {
  */
 async function deleteFunctionAppMapping(req, res) {
   try {
-    const mappingId = parseInt(req.params.id);
+    const mappingId = req.params.id;
     const result = await mappingService.deleteFunctionAppMapping(mappingId);
 
     if (!result.success) {
@@ -336,7 +342,7 @@ async function getAppDeptMappings(req, res) {
  */
 async function getApplicationsByDepartment(req, res) {
   try {
-    const departmentId = parseInt(req.params.departmentId);
+    const departmentId = req.params.departmentId;
     const applications = await mappingService.getApplicationsByDepartment(departmentId);
 
     res.json({
@@ -361,7 +367,7 @@ async function getApplicationsByDepartment(req, res) {
  */
 async function getDepartmentsByApplication(req, res) {
   try {
-    const applicationId = parseInt(req.params.applicationId);
+    const applicationId = req.params.applicationId;
     const departments = await mappingService.getDepartmentsByApplication(applicationId);
 
     res.json({
@@ -386,7 +392,7 @@ async function getDepartmentsByApplication(req, res) {
  */
 async function deleteAppDeptMapping(req, res) {
   try {
-    const mappingId = parseInt(req.params.id);
+    const mappingId = req.params.id;
     const result = await mappingService.deleteAppDeptMapping(mappingId);
 
     if (!result.success) {

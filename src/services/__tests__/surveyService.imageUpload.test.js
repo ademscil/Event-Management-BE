@@ -200,7 +200,7 @@ describe('SurveyService - Image Upload', () => {
       const result = await surveyService.uploadHeroImage(surveyId, file);
 
       expect(result).toHaveProperty('HeroImageUrl');
-      expect(result.HeroImageUrl).toMatch(/http:\/\/localhost:3000\/surveys\/\d+-[a-f0-9]{16}\.jpg/);
+      expect(result.HeroImageUrl).toMatch(/http:\/\/localhost:3000\/uploads\/surveys\/\d+-[a-f0-9]{16}\.jpg/);
       expect(fs.writeFile).toHaveBeenCalled();
     });
 
@@ -208,7 +208,7 @@ describe('SurveyService - Image Upload', () => {
       const existingConfig = {
         ConfigId: 'config-id',
         SurveyId: surveyId,
-        HeroImageUrl: 'http://localhost:3000/surveys/old-image.jpg'
+        HeroImageUrl: 'http://localhost:3000/uploads/surveys/old-image.jpg'
       };
 
       mockRequest.query
@@ -276,7 +276,7 @@ describe('SurveyService - Image Upload', () => {
       const result = await surveyService.uploadQuestionImage(questionId, file);
 
       expect(result).toHaveProperty('ImageUrl');
-      expect(result.ImageUrl).toMatch(/http:\/\/localhost:3000\/questions\/\d+-[a-f0-9]{16}\.png/);
+      expect(result.ImageUrl).toMatch(/http:\/\/localhost:3000\/uploads\/questions\/\d+-[a-f0-9]{16}\.png/);
       expect(fs.writeFile).toHaveBeenCalled();
     });
 
@@ -285,7 +285,7 @@ describe('SurveyService - Image Upload', () => {
         QuestionId: questionId,
         Type: 'Text',
         PromptText: 'Test question',
-        ImageUrl: 'http://localhost:3000/questions/old-image.png'
+        ImageUrl: 'http://localhost:3000/uploads/questions/old-image.png'
       };
 
       mockRequest.query
@@ -344,7 +344,7 @@ describe('SurveyService - Image Upload', () => {
         ? JSON.parse(result.Options) 
         : result.Options;
       expect(options.options[0]).toHaveProperty('imageUrl');
-      expect(options.options[0].imageUrl).toMatch(/http:\/\/localhost:3000\/options\/\d+-[a-f0-9]{16}\.jpg/);
+      expect(options.options[0].imageUrl).toMatch(/http:\/\/localhost:3000\/uploads\/options\/\d+-[a-f0-9]{16}\.jpg/);
     });
 
     it('should upload option image for Checkbox question', async () => {
@@ -404,7 +404,7 @@ describe('SurveyService - Image Upload', () => {
         Type: 'MultipleChoice',
         Options: JSON.stringify({
           options: [
-            { text: 'Option 1', imageUrl: 'http://localhost:3000/options/old-image.jpg' },
+            { text: 'Option 1', imageUrl: 'http://localhost:3000/uploads/options/old-image.jpg' },
             'Option 2'
           ]
         })
@@ -421,7 +421,7 @@ describe('SurveyService - Image Upload', () => {
       const options = typeof result.Options === 'string' 
         ? JSON.parse(result.Options) 
         : result.Options;
-      expect(options.options[0].imageUrl).not.toBe('http://localhost:3000/options/old-image.jpg');
+      expect(options.options[0].imageUrl).not.toBe('http://localhost:3000/uploads/options/old-image.jpg');
       expect(fs.unlink).toHaveBeenCalled();
     });
   });
@@ -452,7 +452,7 @@ describe('SurveyService - Image Upload', () => {
       const result = await surveyService.uploadLogo(surveyId, file);
 
       expect(result).toHaveProperty('LogoUrl');
-      expect(result.LogoUrl).toMatch(/http:\/\/localhost:3000\/surveys\/\d+-[a-f0-9]{16}\.png/);
+      expect(result.LogoUrl).toMatch(/http:\/\/localhost:3000\/uploads\/surveys\/\d+-[a-f0-9]{16}\.png/);
     });
   });
 
@@ -482,7 +482,7 @@ describe('SurveyService - Image Upload', () => {
       const result = await surveyService.uploadBackgroundImage(surveyId, file);
 
       expect(result).toHaveProperty('BackgroundImageUrl');
-      expect(result.BackgroundImageUrl).toMatch(/http:\/\/localhost:3000\/surveys\/\d+-[a-f0-9]{16}\.jpg/);
+      expect(result.BackgroundImageUrl).toMatch(/http:\/\/localhost:3000\/uploads\/surveys\/\d+-[a-f0-9]{16}\.jpg/);
     });
   });
 });

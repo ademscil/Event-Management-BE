@@ -311,11 +311,6 @@ describe('SurveyService - Signature Question Type', () => {
         }]
       });
 
-      // Mock check for responses - return proper structure
-      mockRequest.query.mockResolvedValueOnce({
-        recordset: [{ count: 0 }]
-      });
-
       // Mock update question
       mockRequest.query.mockResolvedValueOnce({
         recordset: [{

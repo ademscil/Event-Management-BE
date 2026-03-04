@@ -1,4 +1,5 @@
 const sql = require('mssql');
+const { randomUUID } = require('crypto');
 const pool = require('../database/connection');
 const logger = require('../config/logger');
 
@@ -33,6 +34,54 @@ class DuplicateError extends Error {
 class ResponseService {
   constructor() {
     this.pool = pool;
+    this.questionResponsesHasApplicationId = null;
+    this.questionResponsesHasTakeoutStatus = null;
+  }
+
+  async createRequest() {
+    if (this.pool && typeof this.pool.getPool === 'function') {
+      const dbPool = await this.pool.getPool();
+      return dbPool.request();
+    }
+    return this.pool.request();
+  }
+
+  async hasQuestionResponseApplicationIdColumn() {
+    if (typeof this.questionResponsesHasApplicationId === 'boolean') {
+      return this.questionResponsesHasApplicationId;
+    }
+
+    const result = await (await this.createRequest())
+      .input('tableName', sql.NVarChar(128), 'QuestionResponses')
+      .input('columnName', sql.NVarChar(128), 'ApplicationId')
+      .query(`
+        SELECT COUNT(1) AS Cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = @tableName
+          AND COLUMN_NAME = @columnName
+      `);
+
+    this.questionResponsesHasApplicationId = Number(result.recordset?.[0]?.Cnt || 0) > 0;
+    return this.questionResponsesHasApplicationId;
+  }
+
+  async hasQuestionResponseTakeoutStatusColumn() {
+    if (typeof this.questionResponsesHasTakeoutStatus === 'boolean') {
+      return this.questionResponsesHasTakeoutStatus;
+    }
+
+    const result = await (await this.createRequest())
+      .input('tableName', sql.NVarChar(128), 'QuestionResponses')
+      .input('columnName', sql.NVarChar(128), 'TakeoutStatus')
+      .query(`
+        SELECT COUNT(1) AS Cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = @tableName
+          AND COLUMN_NAME = @columnName
+      `);
+
+    this.questionResponsesHasTakeoutStatus = Number(result.recordset?.[0]?.Cnt || 0) > 0;
+    return this.questionResponsesHasTakeoutStatus;
   }
 
   /**
@@ -45,7 +94,7 @@ class ResponseService {
       logger.info(`Getting survey form for surveyId: ${surveyId}`);
 
       // Get survey details
-      const surveyResult = await this.pool.request()
+      const surveyResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT 
@@ -65,8 +114,7 @@ class ResponseService {
             sc.FontFamily,
             sc.ShowProgressBar,
             sc.ShowPageNumbers,
-            sc.MultiPage,
-            sc.Styles
+            sc.MultiPage
           FROM Surveys s
           LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
           WHERE s.SurveyId = @surveyId
@@ -90,7 +138,7 @@ class ResponseService {
       }
 
       // Get questions
-      const questionsResult = await this.pool.request()
+      const questionsResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT 
@@ -124,16 +172,6 @@ class ResponseService {
         layoutOrientation: q.LayoutOrientation
       }));
 
-      // Parse styles if present
-      let styles = null;
-      if (survey.Styles) {
-        try {
-          styles = JSON.parse(survey.Styles);
-        } catch (e) {
-          logger.warn(`Failed to parse styles for survey ${surveyId}: ${e.message}`);
-        }
-      }
-
       return {
         surveyId: survey.SurveyId,
         title: survey.Title,
@@ -152,8 +190,7 @@ class ResponseService {
           fontFamily: survey.FontFamily,
           showProgressBar: survey.ShowProgressBar,
           showPageNumbers: survey.ShowPageNumbers,
-          multiPage: survey.MultiPage,
-          styles: styles
+          multiPage: survey.MultiPage
         },
         questions: questions
       };
@@ -164,38 +201,72 @@ class ResponseService {
   }
 
   /**
-   * Get available applications filtered by department
+   * Get available applications for respondent selection.
+   * If departmentId/functionId are provided, filter by mapping.
+   * Otherwise return all active mapped applications.
    * @param {string} surveyId - Survey ID
-   * @param {string} departmentId - Department ID
+   * @param {string} departmentId - Department ID (optional)
+   * @param {string} functionId - Function ID (optional)
    * @returns {Promise<Array>} List of available applications
    */
-  async getAvailableApplications(surveyId, departmentId) {
+  async getAvailableApplications(surveyId, departmentId, functionId) {
     try {
-      logger.info(`Getting available applications for surveyId: ${surveyId}, departmentId: ${departmentId}`);
+      logger.info(`Getting available applications for surveyId: ${surveyId}, departmentId: ${departmentId}, functionId: ${functionId}`);
 
       if (!surveyId) {
         throw new ValidationError('Survey ID is required');
       }
 
-      if (!departmentId) {
-        throw new ValidationError('Department ID is required');
-      }
-
-      // Get applications mapped to the department
-      const result = await this.pool.request()
-        .input('departmentId', sql.UniqueIdentifier, departmentId)
-        .query(`
+      const request = await this.createRequest();
+      let query = `
           SELECT DISTINCT
             a.ApplicationId,
             a.Code,
             a.Name,
             a.Description
           FROM Applications a
-          INNER JOIN ApplicationDepartmentMappings adm ON a.ApplicationId = adm.ApplicationId
-          WHERE adm.DepartmentId = @departmentId
-            AND a.IsActive = 1
+          WHERE a.IsActive = 1
+      `;
+
+      if (departmentId) {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM ApplicationDepartmentMappings adm
+            WHERE adm.ApplicationId = a.ApplicationId
+              AND adm.DepartmentId = @departmentId
+          )
+        `;
+        request.input('departmentId', sql.UniqueIdentifier, departmentId);
+      }
+
+      if (functionId) {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM FunctionApplicationMappings fam
+            WHERE fam.ApplicationId = a.ApplicationId
+              AND fam.FunctionId = @functionId
+          )
+        `;
+        request.input('functionId', sql.UniqueIdentifier, functionId);
+      }
+
+      if (!departmentId && !functionId) {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM ApplicationDepartmentMappings adm
+            WHERE adm.ApplicationId = a.ApplicationId
+          )
+        `;
+      }
+
+      query += `
           ORDER BY a.Name
-        `);
+      `;
+
+      const result = await request.query(query);
 
       return result.recordset.map(app => ({
         applicationId: app.ApplicationId,
@@ -204,26 +275,83 @@ class ResponseService {
         description: app.Description
       }));
     } catch (error) {
-      logger.error(`Error getting available applications: ${error.message}`, { error, surveyId, departmentId });
+      logger.error(`Error getting available applications: ${error.message}`, { error, surveyId, departmentId, functionId });
       throw error;
     }
   }
 
   /**
-   * Validate organizational selections
+   * Validate optional organizational selections (UUID format already checked in controller).
+   * If provided partially, missing parts may still be derived from application mappings.
    * @param {Object} respondent - Respondent information
-   * @throws {ValidationError} If validation fails
    */
   validateOrganizationalSelections(respondent) {
-    if (!respondent.businessUnitId) {
-      throw new ValidationError('Business Unit is required');
+    if (!respondent) {
+      throw new ValidationError('Respondent information is required');
     }
-    if (!respondent.divisionId) {
-      throw new ValidationError('Division is required');
+  }
+
+  /**
+   * Resolve organizational hierarchy from selected application mapping.
+   * @param {string} applicationId - Application ID
+   * @returns {Promise<Object|null>} org hierarchy or null when mapping missing
+   */
+  async getOrgHierarchyByApplication(applicationId) {
+    const result = await (await this.createRequest())
+      .input('applicationId', sql.UniqueIdentifier, applicationId)
+      .query(`
+        SELECT TOP 1
+          bu.BusinessUnitId,
+          div.DivisionId,
+          dept.DepartmentId
+        FROM ApplicationDepartmentMappings adm
+        INNER JOIN Departments dept ON adm.DepartmentId = dept.DepartmentId
+        INNER JOIN Divisions div ON dept.DivisionId = div.DivisionId
+        INNER JOIN BusinessUnits bu ON div.BusinessUnitId = bu.BusinessUnitId
+        WHERE adm.ApplicationId = @applicationId
+          AND bu.IsActive = 1
+          AND div.IsActive = 1
+          AND dept.IsActive = 1
+      `);
+
+    if (result.recordset.length === 0) {
+      return null;
     }
-    if (!respondent.departmentId) {
-      throw new ValidationError('Department is required');
+
+    return {
+      businessUnitId: result.recordset[0].BusinessUnitId,
+      divisionId: result.recordset[0].DivisionId,
+      departmentId: result.recordset[0].DepartmentId
+    };
+  }
+
+  /**
+   * Fill missing respondent org fields from application mapping.
+   * @param {Object} respondent - Respondent object
+   * @param {string} applicationId - Application ID
+   * @returns {Promise<Object>} resolved org values
+   */
+  async resolveRespondentOrg(respondent, applicationId) {
+    const resolved = {
+      businessUnitId: respondent.businessUnitId || null,
+      divisionId: respondent.divisionId || null,
+      departmentId: respondent.departmentId || null
+    };
+
+    if (resolved.businessUnitId && resolved.divisionId && resolved.departmentId) {
+      return resolved;
     }
+
+    const mappedOrg = await this.getOrgHierarchyByApplication(applicationId);
+    if (!mappedOrg) {
+      throw new ValidationError(`Application mapping is incomplete for applicationId: ${applicationId}`);
+    }
+
+    return {
+      businessUnitId: resolved.businessUnitId || mappedOrg.businessUnitId,
+      divisionId: resolved.divisionId || mappedOrg.divisionId,
+      departmentId: resolved.departmentId || mappedOrg.departmentId
+    };
   }
 
   /**
@@ -244,10 +372,88 @@ class ResponseService {
    * @throws {ValidationError} If validation fails
    */
   validateMandatoryQuestions(questions, responses) {
-    const mandatoryQuestions = questions.filter(q => q.isMandatory);
+    const normalizeQuestionRef = (value) => {
+      const raw = String(value || '').trim();
+      if (raw.toLowerCase().startsWith('q-')) {
+        return raw.slice(2);
+      }
+      return raw;
+    };
+
+    const responseMap = new Map(
+      responses.map((response) => [normalizeQuestionRef(response.questionId), response]),
+    );
+
+    const conditionallyMandatoryQuestionIds = new Set();
+    const isSourceMappedApplication = (options) => {
+      const dataSource = String(options?.dataSource || '').toLowerCase();
+      return dataSource === 'app_department' || dataSource === 'app_function';
+    };
+
+    const mappedSelectorQuestion = questions.find((question) => {
+      const options = typeof question.options === 'string'
+        ? JSON.parse(question.options)
+        : question.options;
+      return isSourceMappedApplication(options);
+    });
+    const mappedSelectorResponse = mappedSelectorQuestion
+      ? responseMap.get(normalizeQuestionRef(mappedSelectorQuestion.questionId))
+      : null;
+    const hasMappedSelection = mappedSelectorQuestion
+      ? this.checkResponseHasValue(mappedSelectorQuestion.type, mappedSelectorResponse?.value || null)
+      : false;
+
+    const shouldSkipByVisibility = (question, options) => {
+      const displayCondition = String(options?.displayCondition || 'always');
+      return displayCondition === 'after_mapped_selection' && !hasMappedSelection;
+    };
+
+    for (const question of questions) {
+      const options = typeof question.options === 'string'
+        ? JSON.parse(question.options)
+        : question.options;
+      if (shouldSkipByVisibility(question, options)) {
+        continue;
+      }
+
+      const conditional = options && options.conditionalRequired;
+      if (!conditional || !conditional.sourceElementId) {
+        continue;
+      }
+
+      const sourceQuestionId = normalizeQuestionRef(conditional.sourceElementId);
+      if (!sourceQuestionId) {
+        continue;
+      }
+
+      const sourceResponse = responseMap.get(sourceQuestionId);
+      const sourceNumericValue = this.extractNumericResponseValue(sourceResponse ? sourceResponse.value : null);
+      if (sourceNumericValue === null) {
+        continue;
+      }
+
+      const rawThreshold = Number(conditional.threshold);
+      const threshold = Number.isFinite(rawThreshold)
+        ? Math.min(10, Math.max(1, Math.round(rawThreshold)))
+        : 7;
+
+      if (sourceNumericValue > 0 && sourceNumericValue < threshold) {
+        conditionallyMandatoryQuestionIds.add(normalizeQuestionRef(question.questionId));
+      }
+    }
+
+    const mandatoryQuestions = questions.filter((question) => {
+      const options = typeof question.options === 'string'
+        ? JSON.parse(question.options)
+        : question.options;
+      if (shouldSkipByVisibility(question, options)) {
+        return false;
+      }
+      return question.isMandatory || conditionallyMandatoryQuestionIds.has(normalizeQuestionRef(question.questionId));
+    });
     
     for (const question of mandatoryQuestions) {
-      const response = responses.find(r => r.questionId === question.questionId);
+      const response = responseMap.get(normalizeQuestionRef(question.questionId));
       
       if (!response) {
         throw new ValidationError(`Question "${question.promptText}" is mandatory and must be answered`);
@@ -302,12 +508,36 @@ class ResponseService {
   }
 
   /**
+   * Extract numeric response value from generic response object.
+   * @param {Object|null} value - Response value payload
+   * @returns {number|null} numeric value when available
+   */
+  extractNumericResponseValue(value) {
+    if (!value || typeof value !== 'object') return null;
+
+    const numericValue = Number(value.numericValue);
+    if (Number.isFinite(numericValue)) {
+      return numericValue;
+    }
+
+    const textValue = Number(String(value.textValue || '').trim());
+    if (Number.isFinite(textValue)) {
+      return textValue;
+    }
+
+    return null;
+  }
+
+  /**
    * Submit survey response
    * @param {Object} request - Response submission request
    * @returns {Promise<Object>} Submission result
    */
   async submitResponse(request) {
-    const transaction = new sql.Transaction(this.pool);
+    const dbPool = this.pool && typeof this.pool.getPool === 'function'
+      ? await this.pool.getPool()
+      : this.pool;
+    const transaction = new sql.Transaction(dbPool);
     
     try {
       logger.info(`Submitting response for surveyId: ${request.surveyId}`);
@@ -358,20 +588,23 @@ class ResponseService {
       const ipAddress = request.ipAddress || null;
 
       await transaction.begin();
+      const hasQuestionResponseApplicationId = await this.hasQuestionResponseApplicationIdColumn();
 
       // Create responses for each selected application
       const responseIds = [];
       
       for (const applicationId of request.selectedApplicationIds) {
+        const resolvedOrg = await this.resolveRespondentOrg(request.respondent, applicationId);
+
         // Insert main response record
         const responseResult = await transaction.request()
-          .input('responseId', sql.UniqueIdentifier, sql.UniqueIdentifier.newGuid())
+          .input('responseId', sql.UniqueIdentifier, randomUUID())
           .input('surveyId', sql.UniqueIdentifier, request.surveyId)
           .input('respondentName', sql.NVarChar(200), request.respondent.name)
           .input('respondentEmail', sql.NVarChar(200), request.respondent.email)
-          .input('businessUnitId', sql.UniqueIdentifier, request.respondent.businessUnitId)
-          .input('divisionId', sql.UniqueIdentifier, request.respondent.divisionId)
-          .input('departmentId', sql.UniqueIdentifier, request.respondent.departmentId)
+          .input('businessUnitId', sql.UniqueIdentifier, resolvedOrg.businessUnitId)
+          .input('divisionId', sql.UniqueIdentifier, resolvedOrg.divisionId)
+          .input('departmentId', sql.UniqueIdentifier, resolvedOrg.departmentId)
           .input('applicationId', sql.UniqueIdentifier, applicationId)
           .input('submittedAt', sql.DateTime, new Date())
           .input('ipAddress', sql.NVarChar(50), ipAddress)
@@ -395,30 +628,47 @@ class ResponseService {
         // Insert question responses
         for (const response of request.responses) {
           const value = response.value;
-          
-          await transaction.request()
-            .input('questionResponseId', sql.UniqueIdentifier, sql.UniqueIdentifier.newGuid())
+
+          const questionResponseRequest = transaction.request()
+            .input('questionResponseId', sql.UniqueIdentifier, randomUUID())
             .input('responseId', sql.UniqueIdentifier, responseId)
             .input('questionId', sql.UniqueIdentifier, response.questionId)
-            .input('applicationId', sql.UniqueIdentifier, applicationId)
             .input('textValue', sql.NVarChar(sql.MAX), value.textValue || null)
             .input('numericValue', sql.Decimal(10, 2), value.numericValue || null)
             .input('dateValue', sql.DateTime, value.dateValue || null)
             .input('matrixValues', sql.NVarChar(sql.MAX), value.matrixValues ? JSON.stringify(value.matrixValues) : null)
             .input('commentValue', sql.NVarChar(sql.MAX), value.commentValue || null)
-            .input('takeoutStatus', sql.NVarChar(50), 'Active')
-            .query(`
+            .input('takeoutStatus', sql.NVarChar(50), 'Active');
+
+          if (hasQuestionResponseApplicationId) {
+            await questionResponseRequest
+              .input('applicationId', sql.UniqueIdentifier, applicationId)
+              .query(`
+                INSERT INTO QuestionResponses (
+                  QuestionResponseId, ResponseId, QuestionId, ApplicationId,
+                  TextValue, NumericValue, DateValue, MatrixValues, CommentValue,
+                  TakeoutStatus
+                )
+                VALUES (
+                  @questionResponseId, @responseId, @questionId, @applicationId,
+                  @textValue, @numericValue, @dateValue, @matrixValues, @commentValue,
+                  @takeoutStatus
+                )
+              `);
+          } else {
+            await questionResponseRequest.query(`
               INSERT INTO QuestionResponses (
-                QuestionResponseId, ResponseId, QuestionId, ApplicationId,
+                QuestionResponseId, ResponseId, QuestionId,
                 TextValue, NumericValue, DateValue, MatrixValues, CommentValue,
                 TakeoutStatus
               )
               VALUES (
-                @questionResponseId, @responseId, @questionId, @applicationId,
+                @questionResponseId, @responseId, @questionId,
                 @textValue, @numericValue, @dateValue, @matrixValues, @commentValue,
                 @takeoutStatus
               )
             `);
+          }
         }
       }
 
@@ -447,7 +697,7 @@ class ResponseService {
    */
   async getApplicationById(applicationId) {
     try {
-      const result = await this.pool.request()
+      const result = await (await this.createRequest())
         .input('applicationId', sql.UniqueIdentifier, applicationId)
         .query(`
           SELECT ApplicationId, Code, Name, Description
@@ -492,7 +742,7 @@ class ResponseService {
         throw new ValidationError('Application ID is required');
       }
 
-      const result = await this.pool.request()
+      const result = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .input('email', sql.NVarChar(200), email.toLowerCase().trim())
         .input('applicationId', sql.UniqueIdentifier, applicationId)
@@ -551,7 +801,7 @@ class ResponseService {
         WHERE 1=1
       `;
 
-      const request = this.pool.request();
+      const request = await this.createRequest();
 
       // Apply filters
       if (filter.surveyId) {
@@ -636,7 +886,7 @@ class ResponseService {
       }
 
       // Get main response
-      const responseResult = await this.pool.request()
+      const responseResult = await (await this.createRequest())
         .input('responseId', sql.UniqueIdentifier, responseId)
         .query(`
           SELECT 
@@ -672,14 +922,15 @@ class ResponseService {
       const response = responseResult.recordset[0];
 
       // Get question responses
-      const questionResponsesResult = await this.pool.request()
+      const hasQuestionResponseApplicationId = await this.hasQuestionResponseApplicationIdColumn();
+      const questionResponsesResult = await (await this.createRequest())
         .input('responseId', sql.UniqueIdentifier, responseId)
         .query(`
           SELECT 
             qr.QuestionResponseId,
             qr.ResponseId,
             qr.QuestionId,
-            qr.ApplicationId,
+            ${hasQuestionResponseApplicationId ? 'qr.ApplicationId' : 'CAST(NULL AS UNIQUEIDENTIFIER) AS ApplicationId'},
             qr.TextValue,
             qr.NumericValue,
             qr.DateValue,
@@ -764,7 +1015,7 @@ class ResponseService {
       }
 
       // Get total response count
-      const totalResult = await this.pool.request()
+      const totalResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT COUNT(DISTINCT ResponseId) as TotalResponses
@@ -773,7 +1024,7 @@ class ResponseService {
         `);
 
       // Get response count by department
-      const byDepartmentResult = await this.pool.request()
+      const byDepartmentResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT 
@@ -788,7 +1039,7 @@ class ResponseService {
         `);
 
       // Get response count by application
-      const byApplicationResult = await this.pool.request()
+      const byApplicationResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT 
@@ -803,8 +1054,9 @@ class ResponseService {
           ORDER BY a.Name
         `);
 
+      const hasTakeoutStatus = await this.hasQuestionResponseTakeoutStatusColumn();
       // Get average ratings by question
-      const avgRatingsResult = await this.pool.request()
+      const avgRatingsResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(`
           SELECT 
@@ -818,23 +1070,25 @@ class ResponseService {
           WHERE r.SurveyId = @surveyId
             AND q.Type IN ('Rating', 'MatrixLikert')
             AND qr.NumericValue IS NOT NULL
-            AND qr.TakeoutStatus = 'Active'
+            ${hasTakeoutStatus ? "AND qr.TakeoutStatus = 'Active'" : ''}
           GROUP BY q.QuestionId, q.PromptText
           ORDER BY q.DisplayOrder
         `);
 
       // Get takeout statistics
-      const takeoutResult = await this.pool.request()
-        .input('surveyId', sql.UniqueIdentifier, surveyId)
-        .query(`
-          SELECT 
-            COUNT(CASE WHEN TakeoutStatus = 'Active' THEN 1 END) as ActiveCount,
-            COUNT(CASE WHEN TakeoutStatus = 'ProposedTakeout' THEN 1 END) as ProposedCount,
-            COUNT(CASE WHEN TakeoutStatus = 'TakenOut' THEN 1 END) as TakenOutCount
-          FROM QuestionResponses qr
-          INNER JOIN Responses r ON qr.ResponseId = r.ResponseId
-          WHERE r.SurveyId = @surveyId
-        `);
+      const takeoutResult = hasTakeoutStatus
+        ? await (await this.createRequest())
+          .input('surveyId', sql.UniqueIdentifier, surveyId)
+          .query(`
+            SELECT 
+              COUNT(CASE WHEN TakeoutStatus = 'Active' THEN 1 END) as ActiveCount,
+              COUNT(CASE WHEN TakeoutStatus = 'ProposedTakeout' THEN 1 END) as ProposedCount,
+              COUNT(CASE WHEN TakeoutStatus = 'TakenOut' THEN 1 END) as TakenOutCount
+            FROM QuestionResponses qr
+            INNER JOIN Responses r ON qr.ResponseId = r.ResponseId
+            WHERE r.SurveyId = @surveyId
+          `)
+        : { recordset: [{ ActiveCount: 0, ProposedCount: 0, TakenOutCount: 0 }] };
 
       return {
         totalResponses: totalResult.recordset[0].TotalResponses,

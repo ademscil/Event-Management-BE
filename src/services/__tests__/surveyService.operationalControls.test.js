@@ -49,12 +49,12 @@ describe('SurveyService - Operational Controls', () => {
 
       const result = await surveyService.generateSurveyLink(surveyId, false);
 
-      expect(result.surveyLink).toBe(`http://localhost:3000/survey/${surveyId}`);
+      expect(result.surveyLink).toBe(`http://localhost:3000/survey/index?id=${surveyId}`);
       expect(result.shortenedLink).toBeNull();
       
       // Verify update was called
       expect(mockRequest.input).toHaveBeenCalledWith('surveyId', expect.anything(), surveyId);
-      expect(mockRequest.input).toHaveBeenCalledWith('surveyLink', expect.anything(), `http://localhost:3000/survey/${surveyId}`);
+      expect(mockRequest.input).toHaveBeenCalledWith('surveyLink', expect.anything(), `http://localhost:3000/survey/index?id=${surveyId}`);
       expect(mockRequest.input).toHaveBeenCalledWith('shortenedLink', expect.anything(), null);
     });
 
@@ -68,7 +68,7 @@ describe('SurveyService - Operational Controls', () => {
 
       const result = await surveyService.generateSurveyLink(surveyId, true);
 
-      expect(result.surveyLink).toBe(`http://localhost:3000/survey/${surveyId}`);
+      expect(result.surveyLink).toBe(`http://localhost:3000/survey/index?id=${surveyId}`);
       expect(result.shortenedLink).toBe('http://localhost:3000/s/12345678');
       
       // Verify update was called with shortened link

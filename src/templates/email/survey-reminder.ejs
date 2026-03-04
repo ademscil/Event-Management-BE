@@ -41,6 +41,14 @@
         .content {
             margin-bottom: 30px;
         }
+        .custom-message {
+            background-color: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 16px 0;
+            white-space: pre-line;
+        }
         .deadline-warning {
             background-color: #fff3cd;
             border-left: 4px solid #ffc107;
@@ -97,9 +105,13 @@
         </div>
         
         <div class="content">
-            <p>Kepada Yth. <strong><%= recipientName %></strong>,</p>
+            <p>Yth. Bapak/Ibu,</p>
             
             <p>Ini adalah pengingat bahwa survey <strong><%= surveyTitle %></strong> akan segera berakhir.</p>
+
+            <% if (typeof customMessage !== 'undefined' && customMessage && customMessage.trim()) { %>
+            <div class="custom-message"><%= customMessage %></div>
+            <% } %>
             
             <div class="deadline-warning">
                 <p><strong>⚠️ Batas Waktu:</strong> <%= endDate %></p>

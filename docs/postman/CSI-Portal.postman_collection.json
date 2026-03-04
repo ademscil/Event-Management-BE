@@ -1,0 +1,296 @@
+{
+  "info": {
+    "_postman_id": "9f1a1ca7-4a47-4cb1-8f76-9f5df7d9183c",
+    "name": "CSI Portal API",
+    "description": "Postman collection for CSI Web App backend endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "token", "value": "" },
+    { "key": "refresh_token", "value": "" },
+    { "key": "user_id", "value": "" },
+    { "key": "department_id", "value": "" },
+    { "key": "function_id", "value": "" },
+    { "key": "survey_id", "value": "" },
+    { "key": "question_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) pm.collectionVariables.set('token', data.token);",
+                  "  if (data.refreshToken) pm.collectionVariables.set('refresh_token', data.refreshToken);",
+                  "  if (data.user && data.user.userId) pm.collectionVariables.set('user_id', data.user.userId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"adam.cid00676\",\n  \"password\": \"your-password\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Validate Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/validate",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Get Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/users?includeInactive=true",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "users"],
+              "query": [{ "key": "includeInactive", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Create User (LDAP)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"new.user\",\n  \"npk\": \"9999\",\n  \"displayName\": \"New User\",\n  \"email\": \"new.user@company.co.id\",\n  \"role\": \"AdminEvent\",\n  \"useLDAP\": true,\n  \"businessUnitId\": \"{{business_unit_id}}\",\n  \"divisionId\": \"{{division_id}}\",\n  \"departmentId\": \"{{department_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "users"]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Updated Name\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "users", "{{user_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mappings",
+      "item": [
+        {
+          "name": "Get Apps By Department",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mappings/application-department/department/{{department_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mappings", "application-department", "department", "{{department_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Apps By Function",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/mappings/function-application/function/{{function_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "mappings", "function-application", "function", "{{function_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Surveys",
+      "item": [
+        {
+          "name": "Get Surveys",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/surveys",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "surveys"]
+            }
+          }
+        },
+        {
+          "name": "Get Survey By Id",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/surveys/{{survey_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "surveys", "{{survey_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Questions",
+      "item": [
+        {
+          "name": "Get Questions by Survey",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/questions/survey/{{survey_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "questions", "survey", "{{survey_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Question",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/questions/{{question_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "questions", "{{question_id}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public Responses",
+      "item": [
+        {
+          "name": "Get Survey Form (Public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/api/v1/responses/survey/{{survey_id}}/form",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "responses", "survey", "{{survey_id}}", "form"]
+            }
+          }
+        },
+        {
+          "name": "Submit Response (Public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"surveyId\": \"{{survey_id}}\",\n  \"respondentName\": \"Test User\",\n  \"email\": \"test@company.co.id\",\n  \"answers\": []\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/responses",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "responses"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

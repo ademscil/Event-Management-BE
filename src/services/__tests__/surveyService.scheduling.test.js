@@ -36,11 +36,12 @@ describe('SurveyService - Scheduling Operations', () => {
   });
 
   describe('calculateNextExecution', () => {
-    it('should return null for once frequency', () => {
+    it('should return scheduled date for once frequency', () => {
       const scheduledDate = new Date('2024-03-15T10:00:00');
       const result = surveyService.calculateNextExecution(scheduledDate, 'once', '10:00', null);
-      
-      expect(result).toBeNull();
+
+      expect(result).toBeInstanceOf(Date);
+      expect(result.getTime()).toBe(scheduledDate.getTime());
     });
 
     it('should calculate next day for daily frequency', () => {
