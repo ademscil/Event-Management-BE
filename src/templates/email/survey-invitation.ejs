@@ -40,6 +40,14 @@
         .survey-info p {
             margin: 5px 0;
         }
+        .custom-message {
+            background-color: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 16px 0;
+            white-space: pre-line;
+        }
         .cta-button {
             display: inline-block;
             padding: 12px 30px;
@@ -70,6 +78,29 @@
             border-radius: 8px;
         }
         <% } %>
+        <% if (typeof includeQrCode !== 'undefined' && includeQrCode && typeof qrCodeDataUrl !== 'undefined' && qrCodeDataUrl) { %>
+        .qr-wrap {
+            margin: 16px 0 20px 0;
+            padding: 14px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            text-align: center;
+            background: #f8fafc;
+        }
+        .qr-image {
+            width: 180px;
+            height: 180px;
+            display: inline-block;
+            border-radius: 8px;
+            border: 1px solid #d1d5db;
+            background: #fff;
+        }
+        .qr-caption {
+            margin-top: 8px;
+            color: #4b5563;
+            font-size: 12px;
+        }
+        <% } %>
     </style>
 </head>
 <body>
@@ -83,22 +114,33 @@
         </div>
         
         <div class="content">
-            <p>Kepada Yth. <strong><%= recipientName %></strong>,</p>
-            
-            <p><%= surveyDescription %></p>
-            
+            <p>Bapak/Ibu yang kami hormati,</p>
+            <p>Kami mengundang Anda untuk berpartisipasi pada survey berikut:</p>
+
+            <% if (typeof customMessage !== 'undefined' && customMessage && customMessage.trim()) { %>
+            <div class="custom-message"><%= customMessage %></div>
+            <% } %>
+
             <div class="survey-info">
                 <p><strong>Periode Survey:</strong> <%= startDate %> - <%= endDate %></p>
-                <% if (targetRespondents) { %>
-                <p><strong>Target Responden:</strong> <%= targetRespondents %></p>
-                <% } %>
             </div>
+
+            <% if (surveyDescription) { %>
+            <p><%= surveyDescription %></p>
+            <% } %>
             
             <p>Partisipasi Anda sangat penting untuk membantu kami meningkatkan kualitas layanan IT. Survey ini hanya membutuhkan waktu beberapa menit untuk diselesaikan.</p>
             
             <p style="text-align: center; margin: 30px 0;">
                 <a href="<%= surveyLink %>" class="cta-button">Mulai Survey</a>
             </p>
+
+            <% if (typeof includeQrCode !== 'undefined' && includeQrCode && ((typeof qrCodeImageSrc !== 'undefined' && qrCodeImageSrc) || (typeof qrCodeDataUrl !== 'undefined' && qrCodeDataUrl))) { %>
+            <div class="qr-wrap">
+                <img src="<%= qrCodeImageSrc || qrCodeDataUrl %>" alt="QR Code Survey" class="qr-image" />
+                <div class="qr-caption">Scan QR code ini untuk membuka survey.</div>
+            </div>
+            <% } %>
             
             <p style="font-size: 14px; color: #666;">
                 Atau salin dan tempel link berikut di browser Anda:<br>
