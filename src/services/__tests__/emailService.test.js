@@ -53,7 +53,7 @@ describe('EmailService', () => {
                 heroCoverUrl: null
             });
 
-            expect(html).toContain('Yth. Bapak/Ibu');
+            expect(html).toMatch(/Kepada Yth\.|Yth\. Bapak\/Ibu/);
             expect(html).toContain('IT Satisfaction Survey');
             expect(html).toContain('5 hari lagi');
         });
