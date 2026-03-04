@@ -1,0 +1,449 @@
+openapi: 3.0.3
+info:
+  title: CSI Portal API
+  version: 1.0.0
+  description: API documentation for CSI Web App (Admin + Respondent).
+servers:
+  - url: http://localhost:3000
+    description: Local backend
+security:
+  - bearerAuth: []
+tags:
+  - name: Auth
+  - name: Users
+  - name: Mappings
+  - name: Surveys
+  - name: Questions
+  - name: Responses
+paths:
+  /api/v1/health:
+    get:
+      tags: [Auth]
+      summary: API health check
+      security: []
+      responses:
+        "200":
+          description: API healthy
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login with username and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid username/password
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        "200":
+          description: New token pair
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout current session
+      responses:
+        "200":
+          description: Logged out
+  /api/v1/auth/validate:
+    get:
+      tags: [Auth]
+      summary: Validate access token
+      responses:
+        "200":
+          description: Token valid
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: role
+          schema: { type: string }
+        - in: query
+          name: isActive
+          schema: { type: boolean }
+        - in: query
+          name: includeInactive
+          schema: { type: boolean }
+      responses:
+        "200":
+          description: Users list
+    post:
+      tags: [Users]
+      summary: Create user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by id
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: User detail
+    put:
+      tags: [Users]
+      summary: Update user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+    delete:
+      tags: [Users]
+      summary: Deactivate user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      responses:
+        "200":
+          description: User deactivated
+  /api/v1/users/{id}/ldap:
+    patch:
+      tags: [Users]
+      summary: Toggle LDAP mode
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [useLDAP]
+              properties:
+                useLDAP:
+                  type: boolean
+      responses:
+        "200":
+          description: LDAP setting updated
+  /api/v1/users/{id}/password:
+    patch:
+      tags: [Users]
+      summary: Set password for non-LDAP user
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Password updated
+  /api/v1/mappings/function-application/function/{functionId}:
+    get:
+      tags: [Mappings]
+      summary: Get applications by function
+      parameters:
+        - in: path
+          name: functionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Applications mapped to function
+  /api/v1/mappings/application-department/department/{departmentId}:
+    get:
+      tags: [Mappings]
+      summary: Get applications by department
+      parameters:
+        - in: path
+          name: departmentId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Applications mapped to department
+  /api/v1/surveys:
+    get:
+      tags: [Surveys]
+      summary: List surveys/events
+      responses:
+        "200":
+          description: Survey list
+    post:
+      tags: [Surveys]
+      summary: Create survey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                description: { type: string }
+      responses:
+        "201":
+          description: Survey created
+  /api/v1/surveys/{id}:
+    get:
+      tags: [Surveys]
+      summary: Get survey by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Survey detail
+    put:
+      tags: [Surveys]
+      summary: Update survey by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Survey updated
+  /api/v1/questions/survey/{surveyId}:
+    get:
+      tags: [Questions]
+      summary: List questions by survey
+      parameters:
+        - in: path
+          name: surveyId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Questions list
+  /api/v1/questions:
+    post:
+      tags: [Questions]
+      summary: Add question
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Question created
+  /api/v1/questions/{id}:
+    put:
+      tags: [Questions]
+      summary: Update question
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          description: Question updated
+    delete:
+      tags: [Questions]
+      summary: Delete question
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Question deleted
+  /api/v1/responses/survey/{surveyId}/form:
+    get:
+      tags: [Responses]
+      summary: Public survey form payload
+      security: []
+      parameters:
+        - in: path
+          name: surveyId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Form payload
+  /api/v1/responses:
+    post:
+      tags: [Responses]
+      summary: Submit survey response
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Response submitted
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    UserId:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: adam.cid00676
+        password:
+          type: string
+          example: "your-password"
+    AuthUser:
+      type: object
+      properties:
+        userId: { type: string, format: uuid }
+        username: { type: string }
+        displayName: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead] }
+    LoginResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        token:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/AuthUser"
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - displayName
+        - email
+        - role
+        - useLDAP
+        - businessUnitId
+        - divisionId
+        - departmentId
+      properties:
+        username:
+          type: string
+          example: adam.cid00676
+        npk:
+          type: string
+          example: "0676"
+        displayName:
+          type: string
+          example: Adam Ajul
+        email:
+          type: string
+          example: adam.ajul@company.co.id
+        role:
+          type: string
+          enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead]
+        useLDAP:
+          type: boolean
+          example: true
+        businessUnitId:
+          type: string
+          format: uuid
+        divisionId:
+          type: string
+          format: uuid
+        departmentId:
+          type: string
+          format: uuid
+        password:
+          type: string
+          minLength: 8
+          nullable: true
+    UpdateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        npk:
+          type: string
+        displayName:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+          enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead]
+        businessUnitId:
+          type: string
+          format: uuid
+        divisionId:
+          type: string
+          format: uuid
+        departmentId:
+          type: string
+          format: uuid
+        isActive:
+          type: boolean

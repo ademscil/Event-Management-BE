@@ -194,18 +194,18 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           f.FunctionId,
-          f.FunctionCode,
-          f.FunctionName,
+          f.Code AS FunctionCode,
+          f.Name AS FunctionName,
           a.ApplicationId,
-          a.ApplicationCode,
-          a.ApplicationName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           fam.MappingId,
           fam.CreatedAt
         FROM FunctionApplicationMappings fam
         INNER JOIN Functions f ON fam.FunctionId = f.FunctionId
         INNER JOIN Applications a ON fam.ApplicationId = a.ApplicationId
         WHERE f.IsActive = 1 AND a.IsActive = 1
-        ORDER BY f.FunctionName, a.ApplicationName
+        ORDER BY f.Name, a.Name
       `);
 
       // Group by function with applications as tags
@@ -250,14 +250,14 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           a.ApplicationId,
-          a.ApplicationCode,
-          a.ApplicationName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           a.Description,
           fam.MappingId
         FROM FunctionApplicationMappings fam
         INNER JOIN Applications a ON fam.ApplicationId = a.ApplicationId
         WHERE fam.FunctionId = @functionId AND a.IsActive = 1
-        ORDER BY a.ApplicationName
+        ORDER BY a.Name
       `);
 
       return result.recordset;
@@ -282,13 +282,13 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           f.FunctionId,
-          f.FunctionCode,
-          f.FunctionName,
+          f.Code AS FunctionCode,
+          f.Name AS FunctionName,
           fam.MappingId
         FROM FunctionApplicationMappings fam
         INNER JOIN Functions f ON fam.FunctionId = f.FunctionId
         WHERE fam.ApplicationId = @applicationId AND f.IsActive = 1
-        ORDER BY f.FunctionName
+        ORDER BY f.Name
       `);
 
       return result.recordset;
@@ -479,17 +479,17 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           bu.BusinessUnitId,
-          bu.BusinessUnitCode,
-          bu.BusinessUnitName,
+          bu.Code AS BusinessUnitCode,
+          bu.Name AS BusinessUnitName,
           div.DivisionId,
-          div.DivisionCode,
-          div.DivisionName,
+          div.Code AS DivisionCode,
+          div.Name AS DivisionName,
           dept.DepartmentId,
-          dept.DepartmentCode,
-          dept.DepartmentName,
+          dept.Code AS DepartmentCode,
+          dept.Name AS DepartmentName,
           a.ApplicationId,
-          a.ApplicationCode,
-          a.ApplicationName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           adm.MappingId,
           adm.CreatedAt
         FROM ApplicationDepartmentMappings adm
@@ -498,7 +498,7 @@ class MappingService {
         INNER JOIN Divisions div ON dept.DivisionId = div.DivisionId
         INNER JOIN BusinessUnits bu ON div.BusinessUnitId = bu.BusinessUnitId
         WHERE a.IsActive = 1 AND dept.IsActive = 1 AND div.IsActive = 1 AND bu.IsActive = 1
-        ORDER BY bu.BusinessUnitName, div.DivisionName, dept.DepartmentName, a.ApplicationName
+        ORDER BY bu.Name, div.Name, dept.Name, a.Name
       `);
 
       // Group hierarchically: BU -> Division -> Department -> Applications
@@ -578,14 +578,14 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           a.ApplicationId,
-          a.ApplicationCode,
-          a.ApplicationName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           a.Description,
           adm.MappingId
         FROM ApplicationDepartmentMappings adm
         INNER JOIN Applications a ON adm.ApplicationId = a.ApplicationId
         WHERE adm.DepartmentId = @departmentId AND a.IsActive = 1
-        ORDER BY a.ApplicationName
+        ORDER BY a.Name
       `);
 
       return result.recordset;
@@ -610,13 +610,13 @@ class MappingService {
       const result = await request.query(`
         SELECT 
           dept.DepartmentId,
-          dept.DepartmentCode,
-          dept.DepartmentName,
+          dept.Code AS DepartmentCode,
+          dept.Name AS DepartmentName,
           adm.MappingId
         FROM ApplicationDepartmentMappings adm
         INNER JOIN Departments dept ON adm.DepartmentId = dept.DepartmentId
         WHERE adm.ApplicationId = @applicationId AND dept.IsActive = 1
-        ORDER BY dept.DepartmentName
+        ORDER BY dept.Name
       `);
 
       return result.recordset;
@@ -640,13 +640,13 @@ class MappingService {
       const result = await request.query(`
         SELECT
           dept.DepartmentId,
-          dept.DepartmentCode,
-          dept.DepartmentName,
+          dept.Code AS DepartmentCode,
+          dept.Name AS DepartmentName,
           adm.MappingId
         FROM ApplicationDepartmentMappings adm
         INNER JOIN Departments dept ON adm.DepartmentId = dept.DepartmentId
         WHERE adm.ApplicationId = @applicationId AND dept.IsActive = 1
-        ORDER BY dept.DepartmentName
+        ORDER BY dept.Name
       `);
 
       return result.recordset;
@@ -669,16 +669,16 @@ class MappingService {
 
       const result = await request.query(`
         SELECT
-          f.FunctionCode,
-          f.FunctionName,
-          a.ApplicationCode,
-          a.ApplicationName,
+          f.Code AS FunctionCode,
+          f.Name AS FunctionName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           fam.CreatedAt
         FROM FunctionApplicationMappings fam
         INNER JOIN Functions f ON fam.FunctionId = f.FunctionId
         INNER JOIN Applications a ON fam.ApplicationId = a.ApplicationId
         WHERE f.IsActive = 1 AND a.IsActive = 1
-        ORDER BY f.FunctionName, a.ApplicationName
+        ORDER BY f.Name, a.Name
       `);
 
       // Build CSV
@@ -712,14 +712,14 @@ class MappingService {
 
       const result = await request.query(`
         SELECT
-          bu.BusinessUnitCode,
-          bu.BusinessUnitName,
-          div.DivisionCode,
-          div.DivisionName,
-          dept.DepartmentCode,
-          dept.DepartmentName,
-          a.ApplicationCode,
-          a.ApplicationName,
+          bu.Code AS BusinessUnitCode,
+          bu.Name AS BusinessUnitName,
+          div.Code AS DivisionCode,
+          div.Name AS DivisionName,
+          dept.Code AS DepartmentCode,
+          dept.Name AS DepartmentName,
+          a.Code AS ApplicationCode,
+          a.Name AS ApplicationName,
           adm.CreatedAt
         FROM ApplicationDepartmentMappings adm
         INNER JOIN Applications a ON adm.ApplicationId = a.ApplicationId
@@ -727,7 +727,7 @@ class MappingService {
         INNER JOIN Divisions div ON dept.DivisionId = div.DivisionId
         INNER JOIN BusinessUnits bu ON div.BusinessUnitId = bu.BusinessUnitId
         WHERE a.IsActive = 1 AND dept.IsActive = 1 AND div.IsActive = 1 AND bu.IsActive = 1
-        ORDER BY bu.BusinessUnitName, div.DivisionName, dept.DepartmentName, a.ApplicationName
+        ORDER BY bu.Name, div.Name, dept.Name, a.Name
       `);
 
       // Build CSV

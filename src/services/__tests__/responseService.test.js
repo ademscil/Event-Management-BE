@@ -9,6 +9,8 @@ jest.mock('../../database/connection', () => ({
 describe('ResponseService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    responseService.questionResponsesHasApplicationId = null;
+    responseService.questionResponsesHasTakeoutStatus = null;
   });
 
   describe('getSurveyForm', () => {
@@ -137,9 +139,16 @@ describe('ResponseService', () => {
         .rejects.toThrow('Survey ID is required');
     });
 
-    it('should throw ValidationError if departmentId is missing', async () => {
+    it('should return mapped applications when departmentId is missing', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn().mockResolvedValue({ recordset: [] })
+      };
+
+      pool.request.mockReturnValue(mockRequest);
+
       await expect(responseService.getAvailableApplications('survey-id', null))
-        .rejects.toThrow('Department ID is required');
+        .resolves.toEqual([]);
     });
   });
 
@@ -191,34 +200,14 @@ describe('ResponseService', () => {
   });
 
   describe('validateOrganizationalSelections', () => {
-    it('should throw ValidationError if businessUnitId is missing', () => {
+    it('should not throw when org fields are missing', () => {
       const respondent = {
-        divisionId: 'div-id',
-        departmentId: 'dept-id'
+        name: 'Test User',
+        email: 'test@example.com'
       };
 
       expect(() => responseService.validateOrganizationalSelections(respondent))
-        .toThrow('Business Unit is required');
-    });
-
-    it('should throw ValidationError if divisionId is missing', () => {
-      const respondent = {
-        businessUnitId: 'bu-id',
-        departmentId: 'dept-id'
-      };
-
-      expect(() => responseService.validateOrganizationalSelections(respondent))
-        .toThrow('Division is required');
-    });
-
-    it('should throw ValidationError if departmentId is missing', () => {
-      const respondent = {
-        businessUnitId: 'bu-id',
-        divisionId: 'div-id'
-      };
-
-      expect(() => responseService.validateOrganizationalSelections(respondent))
-        .toThrow('Department is required');
+        .not.toThrow();
     });
 
     it('should not throw if all selections are present', () => {
@@ -230,6 +219,11 @@ describe('ResponseService', () => {
 
       expect(() => responseService.validateOrganizationalSelections(respondent))
         .not.toThrow();
+    });
+
+    it('should throw ValidationError if respondent is missing', () => {
+      expect(() => responseService.validateOrganizationalSelections(null))
+        .toThrow('Respondent information is required');
     });
   });
 
@@ -282,6 +276,84 @@ describe('ResponseService', () => {
     });
   });
 
+  describe('validateMandatoryQuestions', () => {
+    it('should skip mandatory validation for after_mapped_selection questions when mapped app is not selected', () => {
+      const questions = [
+        {
+          questionId: 'mapped-q',
+          type: 'MultipleChoice',
+          promptText: 'Aplikasi',
+          isMandatory: true,
+          options: { dataSource: 'app_department' }
+        },
+        {
+          questionId: 'dependent-q',
+          type: 'Rating',
+          promptText: 'Rating',
+          isMandatory: true,
+          options: { displayCondition: 'after_mapped_selection' }
+        }
+      ];
+
+      expect(() => responseService.validateMandatoryQuestions(questions, []))
+        .toThrow('Aplikasi');
+    });
+
+    it('should enforce comment rule when rating below threshold', () => {
+      const questions = [
+        {
+          questionId: 'rating-q',
+          type: 'Rating',
+          promptText: 'Rating layanan',
+          isMandatory: true,
+          options: { commentRequiredBelowRating: 7 }
+        }
+      ];
+
+      const responses = [
+        {
+          questionId: 'rating-q',
+          value: { numericValue: 6, commentValue: '' }
+        }
+      ];
+
+      expect(() => responseService.validateMandatoryQuestions(questions, responses))
+        .toThrow('comment is required');
+    });
+
+    it('should accept normalized question ids with q- prefix in conditional source', () => {
+      const questions = [
+        {
+          questionId: 'rating-q',
+          type: 'Rating',
+          promptText: 'Rating',
+          isMandatory: true,
+          options: {}
+        },
+        {
+          questionId: 'text-q',
+          type: 'Text',
+          promptText: 'Alasan',
+          isMandatory: false,
+          options: {
+            conditionalRequired: {
+              sourceElementId: 'q-rating-q',
+              threshold: 7
+            }
+          }
+        }
+      ];
+
+      const responses = [
+        { questionId: 'rating-q', value: { numericValue: 6 } },
+        { questionId: 'text-q', value: { textValue: 'Perlu perbaikan' } }
+      ];
+
+      expect(() => responseService.validateMandatoryQuestions(questions, responses))
+        .not.toThrow();
+    });
+  });
+
   describe('getResponses', () => {
     it('should return filtered responses', async () => {
       const mockResponses = [
@@ -329,6 +401,7 @@ describe('ResponseService', () => {
           .mockResolvedValueOnce({ recordset: [{ TotalResponses: 10 }] })
           .mockResolvedValueOnce({ recordset: [] })
           .mockResolvedValueOnce({ recordset: [] })
+          .mockResolvedValueOnce({ recordset: [{ Cnt: 1 }] })
           .mockResolvedValueOnce({ recordset: [] })
           .mockResolvedValueOnce({ recordset: [{ ActiveCount: 8, ProposedCount: 1, TakenOutCount: 1 }] })
       };
@@ -341,6 +414,30 @@ describe('ResponseService', () => {
       expect(result.takeoutStatistics.active).toBe(8);
       expect(result.takeoutStatistics.proposed).toBe(1);
       expect(result.takeoutStatistics.takenOut).toBe(1);
+    });
+
+    it('should fallback takeout stats when TakeoutStatus column is unavailable', async () => {
+      responseService.questionResponsesHasTakeoutStatus = null;
+      const mockSurveyId = '123e4567-e89b-12d3-a456-426614174000';
+
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn()
+          .mockResolvedValueOnce({ recordset: [{ TotalResponses: 3 }] })
+          .mockResolvedValueOnce({ recordset: [] })
+          .mockResolvedValueOnce({ recordset: [] })
+          .mockResolvedValueOnce({ recordset: [{ Cnt: 0 }] })
+          .mockResolvedValueOnce({ recordset: [] })
+      };
+
+      pool.request.mockReturnValue(mockRequest);
+
+      const result = await responseService.getResponseStatistics(mockSurveyId);
+
+      expect(result.totalResponses).toBe(3);
+      expect(result.takeoutStatistics.active).toBe(0);
+      expect(result.takeoutStatistics.proposed).toBe(0);
+      expect(result.takeoutStatistics.takenOut).toBe(0);
     });
 
     it('should throw ValidationError if surveyId is missing', async () => {

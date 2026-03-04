@@ -5,6 +5,7 @@
 
 const nodemailer = require('nodemailer');
 const ejs = require('ejs');
+const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs').promises;
 const sql = require('mssql');
@@ -40,18 +41,26 @@ class EmailService {
      */
     initializeTransporter() {
         try {
-            this.transporter = nodemailer.createTransport({
+            const disableAuth = process.env.SMTP_DISABLE_AUTH === 'true';
+            const transportOptions = {
                 host: process.env.SMTP_HOST,
                 port: parseInt(process.env.SMTP_PORT || '587'),
                 secure: process.env.SMTP_SECURE === 'true',
-                auth: {
-                    user: process.env.SMTP_USER,
-                    pass: process.env.SMTP_PASSWORD
-                },
+                ignoreTLS: process.env.SMTP_IGNORE_TLS === 'true',
+                requireTLS: process.env.SMTP_REQUIRE_TLS === 'true',
                 tls: {
                     rejectUnauthorized: false
                 }
-            });
+            };
+
+            if (!disableAuth && process.env.SMTP_USER) {
+                transportOptions.auth = {
+                    user: process.env.SMTP_USER,
+                    pass: process.env.SMTP_PASSWORD
+                };
+            }
+
+            this.transporter = nodemailer.createTransport(transportOptions);
 
             logger.info('Email transporter initialized successfully');
         } catch (error) {
@@ -100,7 +109,7 @@ class EmailService {
      * @returns {Promise<SendResult>}
      */
     async sendEmail(options) {
-        const { to, subject, template, data, surveyId, emailType = 'Notification' } = options;
+        const { to, subject, template, data, attachments = [], surveyId, emailType = 'Notification' } = options;
 
         try {
             // Render template
@@ -111,7 +120,8 @@ class EmailService {
                 from: process.env.SMTP_FROM,
                 to,
                 subject,
-                html
+                html,
+                attachments
             });
 
             // Log email
@@ -282,6 +292,24 @@ class EmailService {
     }
 
     /**
+     * Convert PNG data URL to Buffer
+     * @param {string|null} dataUrl
+     * @returns {Buffer|null}
+     */
+    dataUrlToBuffer(dataUrl) {
+        if (!dataUrl || typeof dataUrl !== 'string') {
+            return null;
+        }
+
+        const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+        if (!match || !match[1]) {
+            return null;
+        }
+
+        return Buffer.from(match[1], 'base64');
+    }
+
+    /**
      * Send survey invitation email
      * @param {Object} params - Email parameters
      * @returns {Promise<SendResult>}
@@ -445,9 +473,9 @@ class EmailService {
                     u.UserId,
                     u.Email,
                     u.DisplayName,
-                    bu.BusinessUnitName,
-                    d.DivisionName,
-                    dept.DepartmentName
+                    bu.Name as BusinessUnitName,
+                    d.Name as DivisionName,
+                    dept.Name as DepartmentName
                 FROM Users u
                 LEFT JOIN BusinessUnits bu ON u.BusinessUnitId = bu.BusinessUnitId
                 LEFT JOIN Divisions d ON u.DivisionId = d.DivisionId
@@ -516,8 +544,13 @@ class EmailService {
             surveyId,
             targetCriteria,
             emailTemplate,
+            customSubject = '',
+            customMessage = '',
+            includeQrCode = false,
+            recipientEmails = [],
             embedCover = false,
-            duplicatePreventionHours = 24
+            duplicatePreventionHours = 24,
+            disableDuplicateCheck = false
         } = params;
 
         try {
@@ -533,6 +566,7 @@ class EmailService {
                         s.StartDate,
                         s.EndDate,
                         s.SurveyLink,
+                        s.QRCodeDataUrl,
                         s.TargetRespondents,
                         sc.HeroImageUrl
                     FROM Surveys s
@@ -546,8 +580,18 @@ class EmailService {
 
             const survey = surveyResult.recordset[0];
 
-            // Get target recipients
-            const recipients = await this.getTargetRecipients(targetCriteria);
+            let recipients = [];
+            if (Array.isArray(recipientEmails) && recipientEmails.length > 0) {
+                recipients = recipientEmails
+                    .map(email => String(email || '').trim())
+                    .filter(Boolean)
+                    .map(email => ({
+                        email,
+                        name: email.split('@')[0] || email
+                    }));
+            } else {
+                recipients = await this.getTargetRecipients(targetCriteria);
+            }
 
             if (recipients.length === 0) {
                 logger.warn('No recipients found for survey blast');
@@ -573,16 +617,18 @@ class EmailService {
                     continue;
                 }
 
-                const wasSent = await this.wasEmailSentRecently(
-                    recipient.email,
-                    surveyId,
-                    duplicatePreventionHours
-                );
+                if (!disableDuplicateCheck) {
+                    const wasSent = await this.wasEmailSentRecently(
+                        recipient.email,
+                        surveyId,
+                        duplicatePreventionHours
+                    );
 
-                if (wasSent) {
-                    logger.info(`Skipping ${recipient.email} - email sent recently`);
-                    skippedCount++;
-                    continue;
+                    if (wasSent) {
+                        logger.info(`Skipping ${recipient.email} - email sent recently`);
+                        skippedCount++;
+                        continue;
+                    }
                 }
 
                 filteredRecipients.push(recipient);
@@ -590,22 +636,46 @@ class EmailService {
 
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
+            const surveyLink = survey.SurveyLink || `${process.env.BASE_URL}/survey/index.html?id=${surveyId}`;
+            let qrCodeDataUrl = null;
+            if (includeQrCode) {
+                qrCodeDataUrl = survey.QRCodeDataUrl || await QRCode.toDataURL(surveyLink, {
+                    width: 260,
+                    margin: 2
+                });
+            }
+            const qrBuffer = this.dataUrlToBuffer(qrCodeDataUrl);
+            const qrCid = qrBuffer ? `survey-qr-${surveyId}@csi.local` : null;
+            const qrImageSrc = qrCid ? `cid:${qrCid}` : qrCodeDataUrl;
+            const qrAttachment = qrBuffer ? {
+                filename: `survey-${surveyId}-qrcode.png`,
+                content: qrBuffer,
+                contentType: 'image/png',
+                cid: qrCid
+            } : null;
+
             // Prepare email options for batch sending
+            const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
                 to: recipient.email,
-                subject: `Undangan Survey: ${survey.Title}`,
+                subject: subjectLine,
                 template: emailTemplate || 'survey-invitation',
                 data: {
                     recipientName: recipient.name,
                     surveyTitle: survey.Title,
                     surveyDescription: survey.Description,
-                    surveyLink: survey.SurveyLink || `${process.env.BASE_URL}/survey/index.html?id=${surveyId}`,
+                    surveyLink,
                     startDate: new Date(survey.StartDate).toLocaleDateString('id-ID'),
                     endDate: new Date(survey.EndDate).toLocaleDateString('id-ID'),
                     targetRespondents: survey.TargetRespondents,
+                    customMessage,
+                    includeQrCode,
+                    qrCodeDataUrl,
+                    qrCodeImageSrc: qrImageSrc,
                     embedCover,
                     heroCoverUrl: embedCover ? survey.HeroImageUrl : null
                 },
+                attachments: qrAttachment ? [qrAttachment] : [],
                 surveyId,
                 emailType: 'Blast'
             }));
@@ -691,6 +761,9 @@ class EmailService {
         const {
             surveyId,
             emailTemplate,
+            customSubject = '',
+            customMessage = '',
+            recipientEmails = [],
             embedCover = false,
             duplicatePreventionHours = 24
         } = params;
@@ -737,8 +810,18 @@ class EmailService {
             // Calculate days remaining
             const daysRemaining = Math.ceil((endDate - now) / (1000 * 60 * 60 * 24));
 
-            // Get non-respondents
-            const nonRespondents = await this.getNonRespondents(surveyId);
+            let nonRespondents = [];
+            if (Array.isArray(recipientEmails) && recipientEmails.length > 0) {
+                nonRespondents = recipientEmails
+                    .map(email => String(email || '').trim())
+                    .filter(Boolean)
+                    .map(email => ({
+                        email,
+                        name: email.split('@')[0] || email
+                    }));
+            } else {
+                nonRespondents = await this.getNonRespondents(surveyId);
+            }
 
             if (nonRespondents.length === 0) {
                 logger.info('No non-respondents found, all recipients have responded');
@@ -783,9 +866,10 @@ class EmailService {
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
             // Prepare email options for batch sending
+            const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
                 to: recipient.email,
-                subject: `Reminder: ${survey.Title} - Segera Berakhir`,
+                subject: subjectLine,
                 template: emailTemplate || 'survey-reminder',
                 data: {
                     recipientName: recipient.name,
@@ -793,6 +877,7 @@ class EmailService {
                     surveyLink: survey.SurveyLink || `${process.env.BASE_URL}/survey/index.html?id=${surveyId}`,
                     endDate: endDate.toLocaleDateString('id-ID'),
                     daysRemaining,
+                    customMessage,
                     embedCover,
                     heroCoverUrl: embedCover ? survey.HeroImageUrl : null
                 },

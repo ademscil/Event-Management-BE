@@ -229,8 +229,8 @@ class UserService {
    * @returns {boolean} True if valid
    */
   validateUsername(username) {
-    // 3-50 characters, alphanumeric and underscore only
-    const usernameRegex = /^[a-zA-Z0-9_]{3,50}$/;
+    // 3-50 characters, allow dot/underscore/hyphen for LDAP-style usernames (e.g. adam.cid00676)
+    const usernameRegex = /^[a-zA-Z0-9._-]{3,50}$/;
     return usernameRegex.test(username);
   }
 
@@ -249,7 +249,7 @@ class UserService {
     try {
       // Validate username
       if (!this.validateUsername(data.username)) {
-        throw new ValidationError('Username must be 3-50 characters, alphanumeric and underscore only');
+        throw new ValidationError('Username must be 3-50 characters and only contain letters, numbers, dot, underscore, or hyphen');
       }
 
       // Validate email
@@ -370,6 +370,23 @@ class UserService {
         throw new ValidationError('Invalid email format');
       }
 
+      // Validate username if provided
+      if (data.username !== undefined) {
+        const normalizedUsername = String(data.username || '').trim();
+        if (!this.validateUsername(normalizedUsername)) {
+          throw new ValidationError('Username must be 3-50 characters and only contain letters, numbers, dot, underscore, or hyphen');
+        }
+
+        const usernameCheck = await pool.request()
+          .input('username', sql.NVarChar(50), normalizedUsername)
+          .input('userId', sql.UniqueIdentifier, userId)
+          .query('SELECT UserId FROM Users WHERE Username = @username AND UserId != @userId');
+
+        if (usernameCheck.recordset.length > 0) {
+          throw new ConflictError(`Username '${normalizedUsername}' already exists`);
+        }
+      }
+
       // Check for duplicate email if email is being changed
       if (data.email) {
         const emailCheck = await pool.request()
@@ -412,6 +429,10 @@ class UserService {
       if (data.npk !== undefined) {
         updateFields.push('NPK = @npk');
         request.input('npk', sql.NVarChar(50), data.npk || null);
+      }
+      if (data.username !== undefined) {
+        updateFields.push('Username = @username');
+        request.input('username', sql.NVarChar(50), String(data.username).trim());
       }
       if (data.displayName !== undefined) {
         updateFields.push('DisplayName = @displayName');

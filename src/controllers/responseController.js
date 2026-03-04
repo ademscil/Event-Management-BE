@@ -8,7 +8,7 @@ const logger = require('../config/logger');
 const submitResponseValidation = [
   body('surveyId')
     .notEmpty().withMessage('Survey ID is required')
-    .isInt().withMessage('Survey ID must be an integer'),
+    .isUUID().withMessage('Survey ID must be a valid UUID'),
   body('respondent.email')
     .notEmpty().withMessage('Email is required')
     .isEmail().withMessage('Invalid email format'),
@@ -17,17 +17,19 @@ const submitResponseValidation = [
     .trim()
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('respondent.businessUnitId')
-    .notEmpty().withMessage('Business Unit is required')
-    .isInt().withMessage('Business Unit ID must be an integer'),
+    .optional({ values: 'falsy' })
+    .isUUID().withMessage('Business Unit ID must be a valid UUID'),
   body('respondent.divisionId')
-    .notEmpty().withMessage('Division is required')
-    .isInt().withMessage('Division ID must be an integer'),
+    .optional({ values: 'falsy' })
+    .isUUID().withMessage('Division ID must be a valid UUID'),
   body('respondent.departmentId')
-    .notEmpty().withMessage('Department is required')
-    .isInt().withMessage('Department ID must be an integer'),
+    .optional({ values: 'falsy' })
+    .isUUID().withMessage('Department ID must be a valid UUID'),
   body('selectedApplicationIds')
     .isArray().withMessage('Selected applications must be an array')
-    .notEmpty().withMessage('At least one application must be selected'),
+    .notEmpty().withMessage('At least one application must be selected')
+    .custom((ids) => ids.every((id) => typeof id === 'string' && /^[0-9a-fA-F-]{36}$/.test(id)))
+    .withMessage('Each selected application ID must be a valid UUID'),
   body('responses')
     .isArray().withMessage('Responses must be an array')
     .notEmpty().withMessage('At least one response is required')
@@ -41,7 +43,7 @@ const submitResponseValidation = [
  */
 async function getSurveyForm(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
+    const surveyId = req.params.surveyId;
     const form = await responseService.getSurveyForm(surveyId);
 
     if (!form) {
@@ -66,24 +68,18 @@ async function getSurveyForm(req, res) {
 }
 
 /**
- * Get available applications for a department
+ * Get available applications for a survey
  * GET /api/v1/responses/survey/:surveyId/applications?departmentId=1
  * @param {Object} req - Express request object
  * @param {Object} res - Express response object
  */
 async function getAvailableApplications(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
-    const departmentId = parseInt(req.query.departmentId);
+    const surveyId = req.params.surveyId;
+    const departmentId = req.query.departmentId;
+    const functionId = req.query.functionId;
 
-    if (!departmentId) {
-      return res.status(400).json({
-        error: 'Validation failed',
-        message: 'Department ID is required'
-      });
-    }
-
-    const applications = await responseService.getAvailableApplications(surveyId, departmentId);
+    const applications = await responseService.getAvailableApplications(surveyId, departmentId, functionId);
 
     res.json({
       success: true,
@@ -152,25 +148,32 @@ async function submitResponse(req, res) {
  */
 async function checkDuplicateResponse(req, res) {
   try {
-    const { surveyId, email, applicationId } = req.body;
+    const { surveyId, email, applicationId, applicationIds } = req.body;
+    const normalizedApplicationIds = Array.isArray(applicationIds)
+      ? applicationIds.filter(Boolean)
+      : (applicationId ? [applicationId] : []);
 
-    if (!surveyId || !email || !applicationId) {
+    if (!surveyId || !email || normalizedApplicationIds.length === 0) {
       return res.status(400).json({
         error: 'Validation failed',
         message: 'Survey ID, email, and application ID are required'
       });
     }
 
-    const result = await responseService.checkDuplicateResponse(
-      parseInt(surveyId),
-      email,
-      parseInt(applicationId)
-    );
+    let duplicateFound = false;
+    for (const appId of normalizedApplicationIds) {
+      // eslint-disable-next-line no-await-in-loop
+      const isDuplicate = await responseService.checkDuplicateResponse(surveyId, email, appId);
+      if (isDuplicate) {
+        duplicateFound = true;
+        break;
+      }
+    }
 
     res.json({
       success: true,
-      isDuplicate: result.isDuplicate,
-      message: result.message
+      isDuplicate: duplicateFound,
+      message: duplicateFound ? 'Duplicate response found for one or more applications' : 'No duplicate response'
     });
 
   } catch (error) {
@@ -255,7 +258,7 @@ async function getResponseById(req, res) {
  */
 async function getResponseStatistics(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
+    const surveyId = req.params.surveyId;
     const statistics = await responseService.getResponseStatistics(surveyId);
 
     res.json({

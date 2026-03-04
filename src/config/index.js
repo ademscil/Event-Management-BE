@@ -65,6 +65,8 @@ const config = {
 
   // LDAP Configuration
   ldap: {
+    authUrl: process.env.LDAP_AUTH_URL || 'http://10.14.255.106:8089/LDapAuth.asmx',
+    timeoutMs: parseInt(process.env.LDAP_TIMEOUT_MS, 10) || 8000,
     url: process.env.LDAP_URL,
     baseDN: process.env.LDAP_BASE_DN,
     bindDN: process.env.LDAP_BIND_DN,

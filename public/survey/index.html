@@ -71,13 +71,13 @@
         <div class="modal-content signature-modal-content">
             <div class="modal-header">
                 <h3>Tanda Tangan</h3>
-                <button class="modal-close" onclick="SurveyApp.closeSignatureModal()">&times;</button>
+                <button id="signature-modal-close" type="button" class="modal-close">&times;</button>
             </div>
             <div class="modal-body">
                 <canvas id="signature-canvas" width="600" height="300"></canvas>
                 <div class="signature-actions">
-                    <button class="btn btn-secondary" onclick="SurveyApp.clearSignature()">Hapus</button>
-                    <button class="btn btn-primary" onclick="SurveyApp.saveSignature()">Simpan</button>
+                    <button id="signature-clear-btn" type="button" class="btn btn-secondary">Hapus</button>
+                    <button id="signature-save-btn" type="button" class="btn btn-primary">Simpan</button>
                 </div>
             </div>
         </div>
