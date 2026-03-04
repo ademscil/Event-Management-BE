@@ -36,7 +36,7 @@ describe('EmailService', () => {
                 heroCoverUrl: null
             });
 
-            expect(html).toContain('John Doe');
+            expect(html).toContain('Bapak/Ibu yang kami hormati');
             expect(html).toContain('IT Satisfaction Survey');
             expect(html).toContain('Please provide your feedback');
             expect(html).toContain('http://localhost:3000/survey/index.html?id=123');
@@ -53,7 +53,7 @@ describe('EmailService', () => {
                 heroCoverUrl: null
             });
 
-            expect(html).toContain('Jane Smith');
+            expect(html).toContain('Yth. Bapak/Ibu');
             expect(html).toContain('IT Satisfaction Survey');
             expect(html).toContain('5 hari lagi');
         });
@@ -117,7 +117,7 @@ describe('EmailService', () => {
             
             expect(content).toContain('<!DOCTYPE html>');
             expect(content).toContain('surveyTitle');
-            expect(content).toContain('recipientName');
+            expect(content).toContain('Bapak/Ibu yang kami hormati');
         });
 
         test('should throw error for non-existent template', async () => {
