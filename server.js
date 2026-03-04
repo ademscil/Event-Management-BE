@@ -6,6 +6,7 @@ const logger = require('./src/config/logger');
 const db = require('./src/database/connection');
 const { getTLSConfig } = require('./src/config/security');
 const { handleUnhandledRejection, handleUncaughtException } = require('./src/middleware/errorHandler');
+const scheduledOperationsProcessor = require('./src/services/scheduledOperationsProcessor');
 
 /**
  * Create HTTP or HTTPS server based on configuration
@@ -44,6 +45,15 @@ async function startServer() {
       logger.info(`API Endpoint: ${protocol}://localhost:${config.port}/api/v1`);
     });
 
+    // Start scheduled blast/reminder processor
+    scheduledOperationsProcessor.start();
+    logger.info('Scheduled operations processor initialized');
+
+    // Run once on startup to catch overdue pending items immediately
+    scheduledOperationsProcessor.triggerProcessing().catch((error) => {
+      logger.error('Initial scheduled operations trigger failed:', error);
+    });
+
     // Handle server errors
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
@@ -72,12 +82,14 @@ process.on('uncaughtException', handleUncaughtException);
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully...');
+  scheduledOperationsProcessor.stop();
   await db.close();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   logger.info('SIGINT received, shutting down gracefully...');
+  scheduledOperationsProcessor.stop();
   await db.close();
   process.exit(0);
 });

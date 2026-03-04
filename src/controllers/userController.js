@@ -11,7 +11,7 @@ const createUserValidation = [
     .trim()
     .notEmpty().withMessage('Username is required')
     .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, and underscores'),
+    .matches(/^[a-zA-Z0-9._-]+$/).withMessage('Username can only contain letters, numbers, dot, underscore, and hyphen'),
   body('displayName')
     .trim()
     .notEmpty().withMessage('Display name is required')
@@ -52,6 +52,11 @@ const createUserValidation = [
  */
 const updateUserValidation = [
   param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  body('username')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 50 }).withMessage('Username must be between 3 and 50 characters')
+    .matches(/^[a-zA-Z0-9._-]+$/).withMessage('Username can only contain letters, numbers, dot, underscore, and hyphen'),
   body('displayName')
     .optional()
     .trim()

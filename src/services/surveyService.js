@@ -1696,17 +1696,6 @@ class SurveyService {
         throw new NotFoundError('Question not found');
       }
 
-      const surveyId = questionCheck.recordset[0].SurveyId;
-
-      // Check if survey has responses (question immutability)
-      const responseCheck = await pool.request()
-        .input('surveyId', sql.UniqueIdentifier, surveyId)
-        .query('SELECT COUNT(*) as count FROM Responses WHERE SurveyId = @surveyId');
-
-      if (responseCheck.recordset[0].count > 0) {
-        throw new ValidationError('Cannot modify question: survey has responses');
-      }
-
       // Validate question type if provided
       if (data.type) {
         this.validateQuestionType(data.type);
@@ -1822,11 +1811,15 @@ class SurveyService {
    * @returns {Promise<boolean>} True if deleted
    */
   async deleteQuestion(questionId) {
+    const pool = await db.getPool();
+    const transaction = new sql.Transaction(pool);
+
     try {
-      const pool = await db.getPool();
+      await transaction.begin();
+      const request = new sql.Request(transaction);
 
       // Check if question exists
-      const questionCheck = await pool.request()
+      const questionCheck = await request
         .input('questionId', sql.UniqueIdentifier, questionId)
         .query('SELECT QuestionId, SurveyId FROM Questions WHERE QuestionId = @questionId');
 
@@ -1834,25 +1827,27 @@ class SurveyService {
         throw new NotFoundError('Question not found');
       }
 
-      const surveyId = questionCheck.recordset[0].SurveyId;
-
-      // Check if survey has responses (question immutability)
-      const responseCheck = await pool.request()
-        .input('surveyId', sql.UniqueIdentifier, surveyId)
-        .query('SELECT COUNT(*) as count FROM Responses WHERE SurveyId = @surveyId');
-
-      if (responseCheck.recordset[0].count > 0) {
-        throw new ValidationError('Cannot delete question: survey has responses');
-      }
+      // Delete existing responses tied to the deleted question first,
+      // then remove the question so builder changes can be persisted.
+      await request
+        .input('responseQuestionId', sql.UniqueIdentifier, questionId)
+        .query('DELETE FROM QuestionResponses WHERE QuestionId = @responseQuestionId');
 
       // Delete question
-      const result = await pool.request()
-        .input('questionId', sql.UniqueIdentifier, questionId)
-        .query('DELETE FROM Questions WHERE QuestionId = @questionId');
+      const result = await request
+        .input('deleteQuestionId', sql.UniqueIdentifier, questionId)
+        .query('DELETE FROM Questions WHERE QuestionId = @deleteQuestionId');
+
+      await transaction.commit();
 
       logger.info('Question deleted', { questionId });
       return result.rowsAffected[0] > 0;
     } catch (error) {
+      try {
+        await transaction.rollback();
+      } catch (_) {
+        // ignore rollback errors
+      }
       if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
         throw error;
       }
@@ -1989,7 +1984,7 @@ class SurveyService {
       }
 
       // Generate survey link
-      const surveyLink = `${config.baseUrl}/survey/${surveyId}`;
+      const surveyLink = `${config.baseUrl}/survey/index?id=${encodeURIComponent(surveyId)}`;
       let shortenedLink = null;
 
       // Generate shortened link if requested
@@ -2140,14 +2135,12 @@ class SurveyService {
    * @param {string} frequency - 'once', 'daily', 'weekly', 'monthly'
    * @param {string} scheduledTime - Time in HH:mm format (for recurring)
    * @param {number} dayOfWeek - Day of week (0=Sunday, 6=Saturday) for weekly
-   * @returns {Date|null} Next execution date/time or null for 'once'
+   * @returns {Date|null} Next execution date/time
    */
   calculateNextExecution(scheduledDate, frequency, scheduledTime, dayOfWeek) {
     if (frequency === 'once') {
-      return null;
+      return new Date(scheduledDate);
     }
-
-    const now = new Date();
     let nextExecution = new Date(scheduledDate);
 
     // Parse scheduled time if provided
@@ -2207,15 +2200,15 @@ class SurveyService {
         frequency = 'once',
         scheduledTime = null,
         dayOfWeek = null,
-        emailTemplate,
+        emailTemplate = 'survey-invitation',
         embedCover = false,
         targetCriteria = null,
         createdBy
       } = request;
 
       // Validate required fields
-      if (!surveyId || !scheduledDate || !emailTemplate) {
-        throw new ValidationError('Survey ID, scheduled date, and email template are required');
+      if (!surveyId || !scheduledDate) {
+        throw new ValidationError('Survey ID and scheduled date are required');
       }
 
       // Validate frequency
@@ -2343,14 +2336,15 @@ class SurveyService {
         frequency = 'once',
         scheduledTime = null,
         dayOfWeek = null,
-        emailTemplate,
+        emailTemplate = 'survey-reminder',
         embedCover = false,
+        targetCriteria = null,
         createdBy
       } = request;
 
       // Validate required fields
-      if (!surveyId || !scheduledDate || !emailTemplate) {
-        throw new ValidationError('Survey ID, scheduled date, and email template are required');
+      if (!surveyId || !scheduledDate) {
+        throw new ValidationError('Survey ID and scheduled date are required');
       }
 
       // Validate frequency
@@ -2398,6 +2392,7 @@ class SurveyService {
         .input('dayOfWeek', sql.Int, dayOfWeek)
         .input('emailTemplate', sql.NVarChar(sql.MAX), emailTemplate)
         .input('embedCover', sql.Bit, embedCover)
+        .input('targetCriteria', sql.NVarChar(sql.MAX), targetCriteria ? JSON.stringify(targetCriteria) : null)
         .input('nextExecutionAt', sql.DateTime2, nextExecutionAt)
         .input('createdBy', sql.UniqueIdentifier, createdBy || null)
         .query(`
@@ -2425,7 +2420,7 @@ class SurveyService {
             @dayOfWeek,
             @emailTemplate,
             @embedCover,
-            NULL,
+            @targetCriteria,
             'Pending',
             @nextExecutionAt,
             @createdBy
@@ -2445,6 +2440,7 @@ class SurveyService {
         scheduledTime: operation.ScheduledTime,
         dayOfWeek: operation.DayOfWeek,
         embedCover: operation.EmbedCover,
+        targetCriteria: operation.TargetCriteria ? JSON.parse(operation.TargetCriteria) : null,
         status: operation.Status,
         nextExecutionAt: operation.NextExecutionAt,
         createdAt: operation.CreatedAt
@@ -2673,9 +2669,9 @@ class SurveyService {
     const filePath = path.join(fullPath, filename);
     await fs.writeFile(filePath, buffer);
     
-    // Return URL path (relative to server root)
+    // Return public URL served by Express static `/uploads`
     const baseUrl = config.baseUrl || 'http://localhost:3000';
-    return `${baseUrl}/${subdirectory}/${filename}`;
+    return `${baseUrl}/uploads/${subdirectory}/${filename}`;
   }
 
   /**

@@ -685,7 +685,6 @@ describe('SurveyService', () => {
 
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
-        .mockResolvedValueOnce({ recordset: [{ count: 0 }] })
         .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, ...updateData, Options: null }] });
 
       const result = await surveyService.updateQuestion(questionId, updateData);
@@ -704,19 +703,18 @@ describe('SurveyService', () => {
         .rejects.toThrow(NotFoundError);
     });
 
-    it('should throw ValidationError if survey has responses', async () => {
+    it('should allow update even if survey has responses', async () => {
+      const updateData = { promptText: 'Allowed update', updatedBy: '11111111-1111-1111-1111-111111111111' };
       const testRequest = {
         input: jest.fn().mockReturnThis(),
         query: jest.fn()
           .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
-          .mockResolvedValueOnce({ recordset: [{ count: 5 }] })
+          .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, PromptText: 'Allowed update', Options: null }] })
       };
-      mockPool.request = jest.fn()
-        .mockReturnValueOnce(testRequest)
-        .mockReturnValueOnce(testRequest);
+      mockPool.request = jest.fn().mockReturnValue(testRequest);
 
-      await expect(surveyService.updateQuestion(questionId, { promptText: 'Test' }))
-        .rejects.toThrow(ValidationError);
+      await expect(surveyService.updateQuestion(questionId, updateData))
+        .resolves.toBeDefined();
     });
 
     it('should throw ValidationError if promptText is empty', async () => {
@@ -726,16 +724,11 @@ describe('SurveyService', () => {
       };
       const testRequest2 = {
         input: jest.fn().mockReturnThis(),
-        query: jest.fn().mockResolvedValueOnce({ recordset: [{ count: 0 }] })
-      };
-      const testRequest3 = {
-        input: jest.fn().mockReturnThis(),
         query: jest.fn()
       };
       mockPool.request = jest.fn()
         .mockReturnValueOnce(testRequest1)
-        .mockReturnValueOnce(testRequest2)
-        .mockReturnValueOnce(testRequest3);
+        .mockReturnValueOnce(testRequest2);
 
       await expect(surveyService.updateQuestion(questionId, { promptText: '' }))
         .rejects.toThrow(ValidationError);
@@ -748,16 +741,11 @@ describe('SurveyService', () => {
       };
       const testRequest2 = {
         input: jest.fn().mockReturnThis(),
-        query: jest.fn().mockResolvedValueOnce({ recordset: [{ count: 0 }] })
-      };
-      const testRequest3 = {
-        input: jest.fn().mockReturnThis(),
         query: jest.fn()
       };
       mockPool.request = jest.fn()
         .mockReturnValueOnce(testRequest1)
-        .mockReturnValueOnce(testRequest2)
-        .mockReturnValueOnce(testRequest3);
+        .mockReturnValueOnce(testRequest2);
 
       await expect(surveyService.updateQuestion(questionId, {}))
         .rejects.toThrow(ValidationError);
@@ -776,7 +764,6 @@ describe('SurveyService', () => {
 
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
-        .mockResolvedValueOnce({ recordset: [{ count: 0 }] })
         .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, Options: JSON.stringify(updateData.options) }] });
 
       const result = await surveyService.updateQuestion(questionId, updateData);
@@ -789,41 +776,51 @@ describe('SurveyService', () => {
     const questionId = '33333333-3333-3333-3333-333333333333';
     const surveyId = '22222222-2222-2222-2222-222222222222';
 
-    it('should delete question if survey has no responses', async () => {
-      mockRequest.query
-        .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
-        .mockResolvedValueOnce({ recordset: [{ count: 0 }] })
-        .mockResolvedValueOnce({ rowsAffected: [1] });
+    it('should delete question and clean question responses first', async () => {
+      const txRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn()
+          .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
+          .mockResolvedValueOnce({ rowsAffected: [2] }) // delete QuestionResponses
+          .mockResolvedValueOnce({ rowsAffected: [1] }) // delete Questions
+      };
+      mockRequest.query.mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] });
+      sql.Request = jest.fn().mockReturnValue(txRequest);
 
       const result = await surveyService.deleteQuestion(questionId);
 
       expect(result).toBe(true);
+      expect(mockTransaction.begin).toHaveBeenCalled();
+      expect(mockTransaction.commit).toHaveBeenCalled();
+      expect(txRequest.query).toHaveBeenCalledWith('DELETE FROM QuestionResponses WHERE QuestionId = @responseQuestionId');
+      expect(txRequest.query).toHaveBeenCalledWith('DELETE FROM Questions WHERE QuestionId = @deleteQuestionId');
     });
 
     it('should throw NotFoundError if question does not exist', async () => {
-      const testRequest = {
+      const txRequest = {
         input: jest.fn().mockReturnThis(),
-        query: jest.fn().mockResolvedValue({ recordset: [] })
+        query: jest.fn().mockResolvedValueOnce({ recordset: [] })
       };
-      mockPool.request = jest.fn().mockReturnValue(testRequest);
+      sql.Request = jest.fn().mockReturnValue(txRequest);
 
       await expect(surveyService.deleteQuestion(questionId))
         .rejects.toThrow(NotFoundError);
+      expect(mockTransaction.rollback).toHaveBeenCalled();
     });
 
-    it('should throw ValidationError if survey has responses', async () => {
-      const testRequest = {
+    it('should rollback transaction when delete fails', async () => {
+      const txRequest = {
         input: jest.fn().mockReturnThis(),
         query: jest.fn()
           .mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
-          .mockResolvedValueOnce({ recordset: [{ count: 5 }] })
+          .mockRejectedValueOnce(new Error('FK constraint'))
       };
-      mockPool.request = jest.fn()
-        .mockReturnValueOnce(testRequest)
-        .mockReturnValueOnce(testRequest);
+      mockRequest.query.mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] });
+      sql.Request = jest.fn().mockReturnValue(txRequest);
 
       await expect(surveyService.deleteQuestion(questionId))
-        .rejects.toThrow(ValidationError);
+        .rejects.toThrow('FK constraint');
+      expect(mockTransaction.rollback).toHaveBeenCalled();
     });
   });
 

@@ -80,7 +80,10 @@ class ScheduledOperationsProcessor {
                         NextExecutionAt
                     FROM ScheduledOperations
                     WHERE Status = 'Pending'
-                        AND NextExecutionAt <= GETDATE()
+                        AND (
+                            NextExecutionAt <= GETDATE()
+                            OR (NextExecutionAt IS NULL AND ScheduledDate <= GETDATE())
+                        )
                     ORDER BY NextExecutionAt
                 `);
 
@@ -193,11 +196,31 @@ class ScheduledOperationsProcessor {
         const targetCriteria = operation.TargetCriteria 
             ? JSON.parse(operation.TargetCriteria) 
             : {};
+        const recipientEmails = Array.isArray(targetCriteria.recipientEmails)
+            ? targetCriteria.recipientEmails
+            : [];
+        const customSubject = typeof targetCriteria.customSubject === 'string'
+            ? targetCriteria.customSubject
+            : '';
+        const includeQrCode = targetCriteria.includeQrCode === true;
+        const customMessage = typeof targetCriteria.customMessage === 'string'
+            ? targetCriteria.customMessage
+            : '';
+
+        const resolvedTemplate = this.resolveTemplateName(operation.EmailTemplate, 'survey-invitation');
+        const legacyMessage = resolvedTemplate === 'survey-invitation' && operation.EmailTemplate !== resolvedTemplate
+            ? String(operation.EmailTemplate || '')
+            : '';
 
         return await emailService.sendSurveyBlast({
             surveyId: operation.SurveyId,
             targetCriteria,
-            emailTemplate: operation.EmailTemplate || 'survey-invitation',
+            emailTemplate: resolvedTemplate,
+            customSubject,
+            customMessage: customMessage || legacyMessage,
+            includeQrCode,
+            recipientEmails,
+            disableDuplicateCheck: true,
             embedCover: operation.EmbedCover
         });
     }
@@ -208,11 +231,42 @@ class ScheduledOperationsProcessor {
      * @returns {Promise<Object>} Results
      */
     async executeReminder(operation) {
+        const targetCriteria = operation.TargetCriteria
+            ? JSON.parse(operation.TargetCriteria)
+            : {};
+        const recipientEmails = Array.isArray(targetCriteria.recipientEmails)
+            ? targetCriteria.recipientEmails
+            : [];
+        const customSubject = typeof targetCriteria.customSubject === 'string'
+            ? targetCriteria.customSubject
+            : '';
+        const customMessage = typeof targetCriteria.customMessage === 'string'
+            ? targetCriteria.customMessage
+            : '';
+
+        const resolvedTemplate = this.resolveTemplateName(operation.EmailTemplate, 'survey-reminder');
+        const legacyMessage = resolvedTemplate === 'survey-reminder' && operation.EmailTemplate !== resolvedTemplate
+            ? String(operation.EmailTemplate || '')
+            : '';
+
         return await emailService.sendReminders({
             surveyId: operation.SurveyId,
-            emailTemplate: operation.EmailTemplate || 'survey-reminder',
+            emailTemplate: resolvedTemplate,
+            customSubject,
+            customMessage: customMessage || legacyMessage,
+            recipientEmails,
             embedCover: operation.EmbedCover
         });
+    }
+
+    resolveTemplateName(templateName, fallback) {
+        const value = String(templateName || '').trim();
+        if (value === 'survey-invitation' || value === 'survey-reminder') {
+            return value;
+        }
+
+        // Backward compatibility: legacy records may store plain message in EmailTemplate.
+        return fallback;
     }
 
     /**

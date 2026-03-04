@@ -4,6 +4,10 @@ const fs = require('fs');
 const config = require('./config');
 const logger = require('./config/logger');
 const { applySecurityMiddleware, configureAuthRateLimit } = require('./config/security');
+const swaggerUi = require('swagger-ui-express');
+const YAML = require('yamljs');
+const sql = require('mssql');
+const db = require('./database/connection');
 
 /**
  * Initialize Express application
@@ -100,11 +104,46 @@ function registerExtensionlessPageRoutes(basePath, staticDir, defaultPage) {
 registerExtensionlessPageRoutes('/admin', adminStaticDir, 'login');
 registerExtensionlessPageRoutes('/survey', surveyStaticDir, 'index');
 
+// Short survey link redirect: /s/{first-8-survey-id}
+app.get('/s/:shortCode', async (req, res) => {
+  try {
+    const shortCode = String(req.params.shortCode || '').trim();
+    if (!/^[0-9a-fA-F]{8}$/.test(shortCode)) {
+      return res.status(404).send('Invalid survey link');
+    }
+
+    const pool = await db.getPool();
+    const result = await pool.request()
+      .input('prefix', sql.NVarChar(8), shortCode.toLowerCase())
+      .query(`
+        SELECT TOP 2 SurveyId
+        FROM Surveys
+        WHERE LOWER(CONVERT(NVARCHAR(36), SurveyId)) LIKE @prefix + '%'
+      `);
+
+    if (!result.recordset || result.recordset.length !== 1) {
+      return res.status(404).send('Survey link not found');
+    }
+
+    const surveyId = result.recordset[0].SurveyId;
+    return res.redirect(`/survey/index?id=${encodeURIComponent(surveyId)}`);
+  } catch (error) {
+    logger.error('Short link redirect error:', error);
+    return res.status(500).send('Failed to resolve survey link');
+  }
+});
+
 // Serve static files
 app.use('/admin', express.static(path.join(__dirname, '../public/admin')));
 app.use('/survey', express.static(path.join(__dirname, '../public/survey')));
 app.use('/assets', express.static(path.join(__dirname, '../public/assets')));
-app.use('/uploads', express.static(path.join(__dirname, '../public/uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../public/uploads'), {
+  setHeaders: (res) => {
+    // Allow FE on different local origin (e.g. :3001) to render uploaded images.
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
+}));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -161,6 +200,19 @@ const apiRoutes = require('./routes/apiRoutes');
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/monitoring', monitoringRoutes);
 app.use('/api/v1', apiRoutes);
+
+// Swagger / OpenAPI docs
+const openApiPath = path.join(__dirname, '../docs/openapi.yaml');
+if (fs.existsSync(openApiPath)) {
+  const openApiSpec = YAML.load(openApiPath);
+  app.get('/api-docs/openapi.json', (req, res) => {
+    res.json(openApiSpec);
+  });
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+    explorer: true,
+    customSiteTitle: 'CSI Portal API Docs',
+  }));
+}
 
 // API health check endpoint (detailed)
 app.get('/api/v1/health', async (req, res) => {

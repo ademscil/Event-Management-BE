@@ -21,8 +21,8 @@ async function proposeTakeoutForQuestion(req, res) {
     }
 
     const result = await approvalService.proposeTakeoutForQuestion({
-      responseId: parseInt(responseId),
-      questionId: parseInt(questionId),
+      responseId,
+      questionId,
       reason,
       proposedBy
     });
@@ -94,8 +94,9 @@ async function cancelProposedTakeout(req, res) {
     const { responseId, questionId } = req.body;
 
     const result = await approvalService.cancelProposedTakeoutForQuestion(
-      parseInt(responseId),
-      parseInt(questionId)
+      responseId,
+      questionId,
+      req.user?.userId
     );
 
     if (!result.success) {
@@ -131,8 +132,8 @@ async function approveProposedTakeout(req, res) {
     const approvedBy = req.user?.userId;
 
     const result = await approvalService.approveProposedTakeout(
-      parseInt(responseId),
-      parseInt(questionId),
+      responseId,
+      questionId,
       approvedBy,
       reason
     );
@@ -177,8 +178,8 @@ async function rejectProposedTakeout(req, res) {
     }
 
     const result = await approvalService.rejectProposedTakeout(
-      parseInt(responseId),
-      parseInt(questionId),
+      responseId,
+      questionId,
       rejectedBy,
       reason
     );
@@ -213,7 +214,11 @@ async function rejectProposedTakeout(req, res) {
 async function getPendingApprovals(req, res) {
   try {
     const itLeadUserId = req.user?.userId;
-    const approvals = await approvalService.getPendingApprovalsForITLead(itLeadUserId);
+    const { surveyId, functionId } = req.query;
+    const approvals = await approvalService.getPendingApprovalsForITLead(itLeadUserId, {
+      surveyId,
+      functionId
+    });
 
     res.json({
       success: true,
@@ -230,6 +235,101 @@ async function getPendingApprovals(req, res) {
 }
 
 /**
+ * Get respondents list for admin review
+ * GET /api/v1/approvals/respondents
+ * @param {Object} req
+ * @param {Object} res
+ */
+async function getRespondents(req, res) {
+  try {
+    const { surveyId, duplicateFilter, applicationId, departmentId } = req.query;
+    if (!surveyId) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Survey ID is required'
+      });
+    }
+
+    const respondents = await approvalService.getRespondents({
+      surveyId,
+      duplicateFilter,
+      applicationId,
+      departmentId
+    });
+
+    res.json({
+      success: true,
+      respondents
+    });
+  } catch (error) {
+    logger.error('Get respondents controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while fetching respondents'
+    });
+  }
+}
+
+/**
+ * Get comments list for best comment selection
+ * GET /api/v1/approvals/comments
+ * @param {Object} req
+ * @param {Object} res
+ */
+async function getCommentsForSelection(req, res) {
+  try {
+    const { surveyId, functionId, departmentId, applicationId } = req.query;
+    const comments = await approvalService.getCommentsForSelection({
+      surveyId,
+      functionId,
+      departmentId,
+      applicationId
+    });
+
+    res.json({
+      success: true,
+      comments
+    });
+  } catch (error) {
+    logger.error('Get comments for selection controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while fetching comments'
+    });
+  }
+}
+
+/**
+ * Get proposed takeouts list
+ * GET /api/v1/approvals/proposed-takeouts
+ * @param {Object} req
+ * @param {Object} res
+ */
+async function getProposedTakeouts(req, res) {
+  try {
+    const { surveyId, functionId, applicationId, departmentId, status } = req.query;
+    const takeouts = await approvalService.getProposedTakeouts({
+      surveyId,
+      functionId,
+      applicationId,
+      departmentId,
+      status
+    });
+
+    res.json({
+      success: true,
+      takeouts
+    });
+  } catch (error) {
+    logger.error('Get proposed takeouts controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while fetching proposed takeouts'
+    });
+  }
+}
+
+/**
  * Mark as best comment
  * POST /api/v1/approvals/best-comments
  * @param {Object} req - Express request object
@@ -240,8 +340,9 @@ async function markAsBestComment(req, res) {
     const { responseId, questionId } = req.body;
 
     const result = await approvalService.markAsBestComment(
-      parseInt(responseId),
-      parseInt(questionId)
+      responseId,
+      questionId,
+      req.user?.userId
     );
 
     if (!result.success) {
@@ -276,8 +377,9 @@ async function unmarkBestComment(req, res) {
     const { responseId, questionId } = req.body;
 
     const result = await approvalService.unmarkBestComment(
-      parseInt(responseId),
-      parseInt(questionId)
+      responseId,
+      questionId,
+      req.user?.userId
     );
 
     if (!result.success) {
@@ -312,8 +414,8 @@ async function getBestComments(req, res) {
     const { surveyId, functionId } = req.query;
 
     const filter = {};
-    if (surveyId) filter.surveyId = parseInt(surveyId);
-    if (functionId) filter.functionId = parseInt(functionId);
+    if (surveyId) filter.surveyId = surveyId;
+    if (functionId) filter.functionId = functionId;
 
     const comments = await approvalService.getBestComments(filter);
 
@@ -339,12 +441,13 @@ async function getBestComments(req, res) {
  */
 async function submitBestCommentFeedback(req, res) {
   try {
-    const { responseId, questionId, feedbackText } = req.body;
+    const { responseId, questionId, questionResponseId, feedbackText } = req.body;
     const itLeadUserId = req.user?.userId;
 
     const feedback = {
-      responseId: parseInt(responseId),
-      questionId: parseInt(questionId),
+      questionResponseId,
+      responseId,
+      questionId,
       itLeadUserId,
       feedbackText
     };
@@ -361,7 +464,7 @@ async function submitBestCommentFeedback(req, res) {
     res.status(201).json({
       success: true,
       message: 'Feedback submitted successfully',
-      feedback: result.feedback
+      feedback: result
     });
 
   } catch (error) {
@@ -374,6 +477,34 @@ async function submitBestCommentFeedback(req, res) {
 }
 
 /**
+ * Get best comments with IT Lead feedback
+ * GET /api/v1/approvals/best-comments-with-feedback
+ * @param {Object} req
+ * @param {Object} res
+ */
+async function getBestCommentsWithFeedback(req, res) {
+  try {
+    const { surveyId, functionId, departmentId } = req.query;
+    const comments = await approvalService.getBestCommentsWithFeedback({
+      surveyId,
+      functionId,
+      departmentId
+    });
+
+    res.json({
+      success: true,
+      comments
+    });
+  } catch (error) {
+    logger.error('Get best comments with feedback controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while fetching best comments with feedback'
+    });
+  }
+}
+
+/**
  * Get approval statistics
  * GET /api/v1/approvals/statistics/:surveyId
  * @param {Object} req - Express request object
@@ -381,7 +512,7 @@ async function submitBestCommentFeedback(req, res) {
  */
 async function getApprovalStatistics(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
+    const surveyId = req.params.surveyId;
     const statistics = await approvalService.getApprovalStatistics(surveyId);
 
     res.json({
@@ -405,9 +536,13 @@ module.exports = {
   approveProposedTakeout,
   rejectProposedTakeout,
   getPendingApprovals,
+  getRespondents,
+  getProposedTakeouts,
+  getCommentsForSelection,
   markAsBestComment,
   unmarkBestComment,
   getBestComments,
+  getBestCommentsWithFeedback,
   submitBestCommentFeedback,
   getApprovalStatistics
 };

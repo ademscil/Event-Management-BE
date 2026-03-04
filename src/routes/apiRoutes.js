@@ -24,6 +24,12 @@ const integrationController = require('../controllers/integrationController');
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Public master data endpoints for respondent form
+router.get('/public/business-units', businessUnitController.getBusinessUnits);
+router.get('/public/divisions', divisionController.getDivisions);
+router.get('/public/departments', departmentController.getDepartments);
+router.get('/public/functions', functionController.getFunctions);
+
 // Users
 router.get('/users', requireAuth, requirePermission('users:read'), userController.getUsers);
 router.get('/users/template', requireAuth, requirePermission('users:read'), userController.downloadUserTemplate);
@@ -170,9 +176,13 @@ router.delete('/approvals/propose-takeout', requireAuth, requirePermission('resp
 router.post('/approvals/approve', requireAuth, requirePermission('approvals:approve'), approvalController.approveProposedTakeout);
 router.post('/approvals/reject', requireAuth, requirePermission('approvals:reject'), approvalController.rejectProposedTakeout);
 router.get('/approvals/pending', requireAuth, requirePermission('approvals:read'), approvalController.getPendingApprovals);
+router.get('/approvals/respondents', requireAuth, requirePermission('approvals:read'), approvalController.getRespondents);
+router.get('/approvals/proposed-takeouts', requireAuth, requirePermission('approvals:read'), approvalController.getProposedTakeouts);
+router.get('/approvals/comments', requireAuth, requirePermission('best-comments:read'), approvalController.getCommentsForSelection);
 router.post('/approvals/best-comments', requireAuth, requirePermission('best-comments:create'), approvalController.markAsBestComment);
 router.delete('/approvals/best-comments', requireAuth, requirePermission('best-comments:delete'), approvalController.unmarkBestComment);
 router.get('/approvals/best-comments', requireAuth, requirePermission('best-comments:read'), approvalController.getBestComments);
+router.get('/approvals/best-comments-with-feedback', requireAuth, requirePermission('best-comments:read'), approvalController.getBestCommentsWithFeedback);
 router.post('/approvals/best-comments/feedback', requireAuth, requirePermission('best-comments:feedback'), approvalController.submitBestCommentFeedback);
 router.get('/approvals/statistics/:surveyId', requireAuth, requirePermission('approvals:read'), approvalController.getApprovalStatistics);
 

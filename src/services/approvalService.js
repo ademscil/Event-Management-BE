@@ -590,6 +590,56 @@ class ApprovalService {
     }
   }
 
+  async getCommentsForSelection(filter = {}) {
+    await this.initialize();
+    try {
+      let query = `
+        SELECT qr.QuestionResponseId, qr.ResponseId, qr.QuestionId, qr.CommentValue, qr.NumericValue,
+               qr.IsBestComment, q.PromptText as QuestionText, q.DisplayOrder as QuestionOrder,
+               r.RespondentEmail, r.RespondentName, r.SubmittedAt,
+               a.ApplicationId, a.Name as ApplicationName,
+               d.DepartmentId, d.Name as DepartmentName,
+               s.SurveyId, s.Title as SurveyTitle,
+               f.FunctionId, f.Name as FunctionName
+        FROM QuestionResponses qr
+        INNER JOIN Questions q ON qr.QuestionId = q.QuestionId
+        INNER JOIN Surveys s ON q.SurveyId = s.SurveyId
+        INNER JOIN Responses r ON qr.ResponseId = r.ResponseId
+        INNER JOIN Applications a ON r.ApplicationId = a.ApplicationId
+        INNER JOIN Departments d ON r.DepartmentId = d.DepartmentId
+        LEFT JOIN FunctionApplicationMappings fam ON a.ApplicationId = fam.ApplicationId
+        LEFT JOIN Functions f ON fam.FunctionId = f.FunctionId
+        WHERE qr.CommentValue IS NOT NULL
+          AND LTRIM(RTRIM(qr.CommentValue)) <> ''
+      `;
+
+      const request = this.pool.request();
+      if (filter.surveyId) {
+        query += ' AND s.SurveyId = @surveyId';
+        request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+      }
+      if (filter.functionId) {
+        query += ' AND f.FunctionId = @functionId';
+        request.input('functionId', sql.UniqueIdentifier, filter.functionId);
+      }
+      if (filter.departmentId) {
+        query += ' AND d.DepartmentId = @departmentId';
+        request.input('departmentId', sql.UniqueIdentifier, filter.departmentId);
+      }
+      if (filter.applicationId) {
+        query += ' AND a.ApplicationId = @applicationId';
+        request.input('applicationId', sql.UniqueIdentifier, filter.applicationId);
+      }
+
+      query += ' ORDER BY r.SubmittedAt DESC, q.DisplayOrder ASC';
+      const result = await request.query(query);
+      return result.recordset;
+    } catch (error) {
+      logger.error('Error getting comments for selection:', error);
+      throw error;
+    }
+  }
+
   async getBestComments(filter = {}) {
     await this.initialize();
     try {
@@ -635,9 +685,27 @@ class ApprovalService {
 
   async submitBestCommentFeedback(feedback) {
     await this.initialize();
-    const { questionResponseId, itLeadUserId, feedbackText } = feedback;
-    if (!questionResponseId || !itLeadUserId || !feedbackText) {
-      throw new ValidationError('QuestionResponseId, ITLeadUserId, and FeedbackText are required');
+    let { questionResponseId } = feedback;
+    const { responseId, questionId, itLeadUserId, feedbackText } = feedback;
+    if (!itLeadUserId || !feedbackText) {
+      throw new ValidationError('ITLeadUserId and FeedbackText are required');
+    }
+
+    if (!questionResponseId && responseId && questionId) {
+      const resolved = await this.pool.request()
+        .input('responseId', sql.UniqueIdentifier, responseId)
+        .input('questionId', sql.UniqueIdentifier, questionId)
+        .query(`
+          SELECT TOP 1 QuestionResponseId
+          FROM QuestionResponses
+          WHERE ResponseId = @responseId
+            AND QuestionId = @questionId
+        `);
+      questionResponseId = resolved.recordset?.[0]?.QuestionResponseId || null;
+    }
+
+    if (!questionResponseId) {
+      throw new ValidationError('QuestionResponseId is required');
     }
     try {
       const checkResult = await this.pool.request()

@@ -13,13 +13,22 @@ const SurveyApp = (function() {
         currentPage: 0,
         totalPages: 0,
         pages: [], // Array of page objects: { type, data }
-        businessUnits: [],
-        divisions: [],
-        departments: [],
         applications: [],
         selectedApplications: [],
+        defaultApplicationId: null,
+        defaultApplicationName: 'Survey',
         respondentData: {},
         responses: {},
+        answerTextByQuestionId: {},
+        sourceQuestionIds: {},
+        masterData: {
+            businessUnits: [],
+            divisions: [],
+            departments: [],
+            functions: [],
+            applicationsByDepartment: {},
+            applicationsByFunction: {}
+        },
         signatureCanvas: null,
         signatureContext: null,
         currentSignatureQuestionId: null,
@@ -27,6 +36,331 @@ const SurveyApp = (function() {
     };
 
     const API_BASE_URL = '/api/v1';
+
+    function normalizeQuestion(question) {
+        const options = question.options || {};
+        const normalized = { ...question, options: {} };
+
+        if (question.type === 'MultipleChoice' || question.type === 'Checkbox') {
+            const sourceOptions = Array.isArray(options.options) ? options.options : [];
+            normalized.options = {
+                choices: sourceOptions.map(opt => ({ text: String(opt) })),
+                orientation: options.layout === 'horizontal' ? 'horizontal' : 'vertical',
+                dataSource: normalizeDataSource(options.dataSource),
+                displayCondition: String(options.displayCondition || 'always')
+            };
+            return normalized;
+        }
+
+        if (question.type === 'Dropdown') {
+            normalized.options = {
+                dropdownOptions: Array.isArray(options.options) ? options.options.map(opt => String(opt)) : [],
+                dataSource: normalizeDataSource(options.dataSource),
+                displayCondition: String(options.displayCondition || 'always')
+            };
+            return normalized;
+        }
+
+        if (question.type === 'MatrixLikert') {
+            if (options.variant === 'matrix') {
+                normalized.options = {
+                    matrixRows: Array.isArray(options.columns) && options.columns.length > 0
+                        ? options.columns.map(col => String(col))
+                        : ['Statement 1', 'Statement 2', 'Statement 3'],
+                    scaleMin: 1,
+                    scaleMax: 10,
+                    displayCondition: String(options.displayCondition || 'always')
+                };
+                return normalized;
+            }
+
+            normalized.options = {
+                matrixRows: Array.isArray(options.rows) && options.rows.length > 0
+                    ? options.rows.map(row => String(row))
+                    : ['Statement 1', 'Statement 2'],
+                scaleMin: 1,
+                scaleMax: 10,
+                displayCondition: String(options.displayCondition || 'always')
+            };
+            return normalized;
+        }
+
+        if (question.type === 'Rating') {
+            normalized.options = {
+                ratingScale: Number(options.ratingScale || 10),
+                commentRequiredBelowRating: options.commentRequiredBelowRating || null,
+                displayCondition: String(options.displayCondition || 'always')
+            };
+            return normalized;
+        }
+
+        normalized.options = options;
+        return normalized;
+    }
+
+    function normalizeDataSource(value) {
+        const source = String(value || 'manual').toLowerCase();
+        if (
+            source === 'bu' ||
+            source === 'division' ||
+            source === 'department' ||
+            source === 'function' ||
+            source === 'app_department' ||
+            source === 'app_function'
+        ) {
+            return source;
+        }
+        return 'manual';
+    }
+
+    function buildSourceQuestionIds(questions) {
+        const result = {};
+        questions.forEach(question => {
+            if (question.type !== 'Dropdown' && question.type !== 'MultipleChoice' && question.type !== 'Checkbox') return;
+            const source = normalizeDataSource(question.options && question.options.dataSource);
+            if (source !== 'manual' && !result[source]) {
+                result[source] = question.questionId;
+            }
+        });
+        state.sourceQuestionIds = result;
+    }
+
+    function getQuestionElementValue(questionId) {
+        const element = document.getElementById(`question-${questionId}`);
+        if (!element) return '';
+        if (typeof element.value === 'string') return element.value;
+        return '';
+    }
+
+    function getAnswerValue(questionId) {
+        if (!questionId) return '';
+        const elementValue = getQuestionElementValue(questionId);
+        if (elementValue) return elementValue;
+        return String(state.answerTextByQuestionId[questionId] || '');
+    }
+
+    function findIdByName(items, name) {
+        const normalized = String(name || '').trim().toLowerCase();
+        if (!normalized) return '';
+        const found = items.find(item => String(item.name || '').trim().toLowerCase() === normalized);
+        return found ? String(found.id) : '';
+    }
+
+    async function fetchApplicationsByDepartment(departmentId) {
+        if (!departmentId) return [];
+        if (state.masterData.applicationsByDepartment[departmentId]) {
+            return state.masterData.applicationsByDepartment[departmentId];
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/responses/survey/${state.surveyId}/applications?departmentId=${departmentId}`);
+            if (!response.ok) return [];
+            const payload = await response.json();
+            const apps = Array.isArray(payload.applications)
+                ? payload.applications.map(app => ({
+                    id: app.applicationId,
+                    name: String(app.name || '').trim()
+                })).filter(app => app.id && app.name)
+                : [];
+            state.masterData.applicationsByDepartment[departmentId] = apps;
+            return apps;
+        } catch (error) {
+            console.error('Failed to load applications by department:', error);
+            return [];
+        }
+    }
+
+    async function fetchApplicationsByFunction(functionId) {
+        if (!functionId) return [];
+        if (state.masterData.applicationsByFunction[functionId]) {
+            return state.masterData.applicationsByFunction[functionId];
+        }
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/responses/survey/${state.surveyId}/applications?functionId=${functionId}`);
+            if (!response.ok) return [];
+            const payload = await response.json();
+            const apps = Array.isArray(payload.applications)
+                ? payload.applications.map(app => ({
+                    id: app.applicationId,
+                    name: String(app.name || '').trim()
+                })).filter(app => app.id && app.name)
+                : [];
+            state.masterData.applicationsByFunction[functionId] = apps;
+            return apps;
+        } catch (error) {
+            console.error('Failed to load applications by function:', error);
+            return [];
+        }
+    }
+
+    async function initializeApplicationContext() {
+        const response = await fetch(`${API_BASE_URL}/responses/survey/${state.surveyId}/applications`);
+        if (!response.ok) {
+            throw new Error('Gagal memuat aplikasi survey');
+        }
+        const payload = await response.json();
+        state.applications = Array.isArray(payload.applications) ? payload.applications : [];
+
+        if (state.applications.length === 0) {
+            throw new Error('Tidak ada aplikasi yang tersedia untuk survey ini');
+        }
+
+        state.defaultApplicationId = state.applications[0].applicationId;
+        state.defaultApplicationName = state.applications[0].name || 'Survey';
+        state.selectedApplications = [{
+            applicationId: state.defaultApplicationId,
+            applicationName: state.defaultApplicationName
+        }];
+    }
+
+    async function initializeMasterData() {
+        try {
+            const [buResponse, divisionResponse, departmentResponse, functionResponse] = await Promise.all([
+                fetch(`${API_BASE_URL}/public/business-units`),
+                fetch(`${API_BASE_URL}/public/divisions`),
+                fetch(`${API_BASE_URL}/public/departments`),
+                fetch(`${API_BASE_URL}/public/functions`)
+            ]);
+
+            if (!buResponse.ok) {
+                state.masterData.businessUnits = [];
+                return;
+            }
+
+            const [buPayload, divisionPayload, departmentPayload, functionPayload] = await Promise.all([
+                buResponse.json(),
+                divisionResponse.ok ? divisionResponse.json() : Promise.resolve({ divisions: [] }),
+                departmentResponse.ok ? departmentResponse.json() : Promise.resolve({ departments: [] }),
+                functionResponse.ok ? functionResponse.json() : Promise.resolve({ functions: [] })
+            ]);
+
+            state.masterData.businessUnits = Array.isArray(buPayload.businessUnits)
+                ? buPayload.businessUnits.map(item => ({
+                    id: item.BusinessUnitId,
+                    name: String(item.Name || '').trim()
+                })).filter(item => item.id && item.name)
+                : [];
+
+            state.masterData.divisions = Array.isArray(divisionPayload.divisions)
+                ? divisionPayload.divisions.map(item => ({
+                    id: item.DivisionId,
+                    businessUnitId: item.BusinessUnitId,
+                    name: String(item.Name || '').trim()
+                })).filter(item => item.id && item.name)
+                : [];
+
+            state.masterData.departments = Array.isArray(departmentPayload.departments)
+                ? departmentPayload.departments.map(item => ({
+                    id: item.DepartmentId,
+                    divisionId: item.DivisionId,
+                    name: String(item.Name || '').trim()
+                })).filter(item => item.id && item.name)
+                : [];
+
+            state.masterData.functions = Array.isArray(functionPayload.functions)
+                ? functionPayload.functions.map(item => ({
+                    id: item.FunctionId,
+                    name: String(item.Name || '').trim()
+                })).filter(item => item.id && item.name)
+                : [];
+        } catch (error) {
+            console.error('Failed to load master business units:', error);
+            state.masterData.businessUnits = [];
+        }
+    }
+
+    async function hydrateQuestionDataSources(questions) {
+        const selectedBuValue = getAnswerValue(state.sourceQuestionIds.bu);
+        const selectedDivisionValue = getAnswerValue(state.sourceQuestionIds.division);
+        const selectedDepartmentValue = getAnswerValue(state.sourceQuestionIds.department);
+        const selectedFunctionValue = getAnswerValue(state.sourceQuestionIds.function);
+
+        const selectedBuId = findIdByName(state.masterData.businessUnits, selectedBuValue);
+        const selectedDivisionId = findIdByName(state.masterData.divisions, selectedDivisionValue);
+        const selectedDepartmentId = findIdByName(state.masterData.departments, selectedDepartmentValue);
+        const selectedFunctionId = findIdByName(state.masterData.functions, selectedFunctionValue);
+
+        const filteredDivisions = selectedBuId
+            ? state.masterData.divisions.filter(item => String(item.businessUnitId || '') === selectedBuId)
+            : state.masterData.divisions;
+        const filteredDepartments = selectedDivisionId
+            ? state.masterData.departments.filter(item => String(item.divisionId || '') === selectedDivisionId)
+            : state.masterData.departments;
+
+        const appByDepartment = await fetchApplicationsByDepartment(selectedDepartmentId);
+        const appByFunction = await fetchApplicationsByFunction(selectedFunctionId);
+
+        return questions.map(question => {
+            if (question.type !== 'Dropdown' && question.type !== 'MultipleChoice' && question.type !== 'Checkbox') {
+                return question;
+            }
+
+            const options = question.options || {};
+            const source = normalizeDataSource(options.dataSource);
+            const currentDropdownOptions = Array.isArray(options.dropdownOptions) ? options.dropdownOptions : [];
+            const currentChoiceOptions = Array.isArray(options.choices) ? options.choices : [];
+            let dynamicOptions = question.type === 'Dropdown'
+                ? currentDropdownOptions
+                : currentChoiceOptions.map(item => String(item.text || '').trim()).filter(Boolean);
+
+            if (source === 'bu') {
+                dynamicOptions = state.masterData.businessUnits.map(item => item.name);
+            } else if (source === 'division') {
+                dynamicOptions = filteredDivisions.map(item => item.name);
+            } else if (source === 'department') {
+                dynamicOptions = filteredDepartments.map(item => item.name);
+            } else if (source === 'function') {
+                dynamicOptions = state.masterData.functions.map(item => item.name);
+            } else if (source === 'app_department') {
+                dynamicOptions = appByDepartment.map(item => item.name);
+            } else if (source === 'app_function') {
+                dynamicOptions = appByFunction.map(item => item.name);
+            }
+
+            if (question.type === 'Dropdown') {
+                return {
+                    ...question,
+                    options: {
+                        ...options,
+                        dropdownOptions: dynamicOptions
+                    }
+                };
+            }
+
+            return {
+                ...question,
+                options: {
+                    ...options,
+                    choices: dynamicOptions.map(item => ({ text: item }))
+                }
+            };
+        });
+    }
+
+    function filterQuestionsByVisibility(questions) {
+        const mappedSelector = questions.find(question => {
+            if (question.type !== 'Dropdown' && question.type !== 'MultipleChoice' && question.type !== 'Checkbox') {
+                return false;
+            }
+            const source = normalizeDataSource(question.options && question.options.dataSource);
+            return source === 'app_department' || source === 'app_function';
+        });
+
+        if (!mappedSelector) {
+            return questions;
+        }
+
+        const mappedValue = getAnswerValue(mappedSelector.questionId);
+        const hasMappedSelection = String(mappedValue || '').trim().length > 0;
+
+        return questions.filter(question => {
+            if (question.questionId === mappedSelector.questionId) return true;
+            const displayCondition = String((question.options && question.options.displayCondition) || 'always');
+            if (displayCondition !== 'after_mapped_selection') return true;
+            return hasMappedSelection;
+        });
+    }
 
     /**
      * Initialize application
@@ -44,12 +378,13 @@ const SurveyApp = (function() {
 
             // Fetch survey data
             await loadSurveyData();
-
+            await initializeApplicationContext();
+            await initializeMasterData();
             // Build page structure
             buildPageStructure();
 
             // Render first page
-            renderCurrentPage();
+            await renderCurrentPage();
 
             // Attach event listeners
             attachEventListeners();
@@ -69,11 +404,13 @@ const SurveyApp = (function() {
      * Load survey data from API
      */
     async function loadSurveyData() {
-        const response = await fetch(`${API_BASE_URL}/surveys/${state.surveyId}`);
+        const response = await fetch(`${API_BASE_URL}/responses/survey/${state.surveyId}/form`);
         if (!response.ok) {
             throw new Error('Survey tidak ditemukan atau sudah tidak aktif');
         }
-        state.survey = await response.json();
+
+        const payload = await response.json();
+        state.survey = payload.form;
 
         // Check if survey is active
         if (state.survey.status !== 'Active') {
@@ -99,19 +436,36 @@ const SurveyApp = (function() {
     function buildPageStructure() {
         state.pages = [];
 
-        // Page 1: Intro/Hero Cover (if exists)
-        if (state.survey.configuration && state.survey.configuration.heroImageUrl) {
-            state.pages.push({ type: 'intro', data: state.survey });
-        }
+        const questions = (state.survey.questions || []).map(normalizeQuestion);
+        buildSourceQuestionIds(questions);
+        const groupedByPage = new Map();
 
-        // Page 2: Respondent Data Form
-        state.pages.push({ type: 'respondent', data: null });
+        questions.forEach(question => {
+            const pageNumber = Number(question.pageNumber || 1);
+            if (!groupedByPage.has(pageNumber)) {
+                groupedByPage.set(pageNumber, []);
+            }
+            groupedByPage.get(pageNumber).push(question);
+        });
 
-        // Page 3: Application Selection
-        state.pages.push({ type: 'applications', data: null });
+        const orderedPages = Array.from(groupedByPage.keys()).sort((a, b) => a - b);
+        orderedPages.forEach(pageNumber => {
+            const pageQuestions = groupedByPage
+                .get(pageNumber)
+                .slice()
+                .sort((a, b) => Number(a.displayOrder || 0) - Number(b.displayOrder || 0));
 
-        // Page 4+: Questions (will be added dynamically per application)
-        // Questions pages will be built after application selection
+            state.pages.push({
+                type: 'questions',
+                data: {
+                    pageNumber,
+                    pageTitle: `Halaman ${pageNumber}`,
+                    applicationId: state.defaultApplicationId,
+                    applicationName: state.defaultApplicationName,
+                    questions: pageQuestions
+                }
+            });
+        });
 
         state.totalPages = state.pages.length;
     }
@@ -119,161 +473,24 @@ const SurveyApp = (function() {
     /**
      * Render current page
      */
-    function renderCurrentPage() {
+    async function renderCurrentPage() {
         const page = state.pages[state.currentPage];
         const content = document.getElementById('survey-content');
 
         switch (page.type) {
-            case 'intro':
-                content.innerHTML = SurveyRenderer.renderIntroPage(page.data);
-                break;
-            case 'respondent':
-                renderRespondentPage();
-                break;
-            case 'applications':
-                renderApplicationsPage();
-                break;
             case 'questions':
-                content.innerHTML = SurveyRenderer.renderQuestionsPage(page.data.questions, page.data.applicationName);
+                {
+                    const hydratedQuestions = await hydrateQuestionDataSources(page.data.questions);
+                    const visibleQuestions = filterQuestionsByVisibility(hydratedQuestions);
+                    content.innerHTML = SurveyRenderer.renderQuestionsPage(visibleQuestions, page.data.pageTitle);
+                }
+                restoreCurrentPageInputs(page.data.applicationId);
                 attachQuestionEventListeners();
                 break;
         }
 
         updateNavigation();
         updateProgressBar();
-    }
-
-    /**
-     * Render respondent data form
-     */
-    async function renderRespondentPage() {
-        const content = document.getElementById('survey-content');
-        
-        // Load business units if not loaded
-        if (state.businessUnits.length === 0) {
-            try {
-                const response = await fetch(`${API_BASE_URL}/business-units`);
-                state.businessUnits = await response.json();
-            } catch (error) {
-                console.error('Error loading business units:', error);
-                state.businessUnits = [];
-            }
-        }
-
-        content.innerHTML = SurveyRenderer.renderRespondentForm(state.businessUnits);
-        attachRespondentFormListeners();
-    }
-
-    /**
-     * Attach event listeners to respondent form
-     */
-    function attachRespondentFormListeners() {
-        // Business Unit change
-        document.getElementById('business-unit').addEventListener('change', async (e) => {
-            const buId = e.target.value;
-            const divisionSelect = document.getElementById('division');
-            const departmentSelect = document.getElementById('department');
-
-            // Reset divisions and departments
-            divisionSelect.innerHTML = '<option value="">-- Pilih Division --</option>';
-            departmentSelect.innerHTML = '<option value="">-- Pilih Department --</option>';
-            divisionSelect.disabled = true;
-            departmentSelect.disabled = true;
-
-            if (buId) {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/divisions?businessUnitId=${buId}`);
-                    state.divisions = await response.json();
-                    
-                    state.divisions.forEach(div => {
-                        const option = document.createElement('option');
-                        option.value = div.divisionId;
-                        option.textContent = div.name;
-                        divisionSelect.appendChild(option);
-                    });
-                    
-                    divisionSelect.disabled = false;
-                } catch (error) {
-                    console.error('Error loading divisions:', error);
-                }
-            }
-        });
-
-        // Division change
-        document.getElementById('division').addEventListener('change', async (e) => {
-            const divisionId = e.target.value;
-            const departmentSelect = document.getElementById('department');
-
-            // Reset departments
-            departmentSelect.innerHTML = '<option value="">-- Pilih Department --</option>';
-            departmentSelect.disabled = true;
-
-            if (divisionId) {
-                try {
-                    const response = await fetch(`${API_BASE_URL}/departments?divisionId=${divisionId}`);
-                    state.departments = await response.json();
-                    
-                    state.departments.forEach(dept => {
-                        const option = document.createElement('option');
-                        option.value = dept.departmentId;
-                        option.textContent = dept.name;
-                        departmentSelect.appendChild(option);
-                    });
-                    
-                    departmentSelect.disabled = false;
-                } catch (error) {
-                    console.error('Error loading departments:', error);
-                }
-            }
-        });
-    }
-
-    /**
-     * Render applications selection page
-     */
-    async function renderApplicationsPage() {
-        const content = document.getElementById('survey-content');
-        
-        // Load applications based on selected department
-        const departmentId = state.respondentData.departmentId;
-        
-        if (!departmentId) {
-            showError('Department tidak ditemukan');
-            return;
-        }
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/applications/by-department/${departmentId}`);
-            state.applications = await response.json();
-            
-            if (state.applications.length === 0) {
-                showError('Tidak ada aplikasi yang tersedia untuk department ini');
-                return;
-            }
-
-            content.innerHTML = SurveyRenderer.renderApplicationSelection(state.applications);
-            attachApplicationListeners();
-        } catch (error) {
-            console.error('Error loading applications:', error);
-            showError('Gagal memuat daftar aplikasi');
-        }
-    }
-
-    /**
-     * Attach event listeners to application checkboxes
-     */
-    function attachApplicationListeners() {
-        const checkboxes = document.querySelectorAll('#application-list input[type="checkbox"]');
-        checkboxes.forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
-                const item = e.target.closest('.checkbox-item');
-                if (e.target.checked) {
-                    item.classList.add('selected');
-                } else {
-                    item.classList.remove('selected');
-                }
-            });
-        });
     }
 
     /**
@@ -303,6 +520,14 @@ const SurveyApp = (function() {
         const checkboxItems = document.querySelectorAll('.checkbox-item, .radio-item');
         checkboxItems.forEach(item => {
             const input = item.querySelector('input');
+            if (!input) return;
+
+            if (input.checked) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+
             input.addEventListener('change', () => {
                 if (input.type === 'checkbox') {
                     if (input.checked) {
@@ -318,6 +543,38 @@ const SurveyApp = (function() {
                         item.classList.add('selected');
                     }
                 }
+            });
+        });
+
+        const dropdownInputs = document.querySelectorAll('.question-item[data-question-type="Dropdown"] select.form-control');
+        dropdownInputs.forEach(input => {
+            input.addEventListener('change', async () => {
+                const questionEl = input.closest('.question-item');
+                if (!questionEl) return;
+                const questionId = questionEl.dataset.questionId;
+                if (!questionId) return;
+                state.answerTextByQuestionId[questionId] = input.value;
+                saveCurrentPageData();
+                await renderCurrentPage();
+            });
+        });
+
+        const mappedSelectorInputs = document.querySelectorAll(
+            '.question-item[data-data-source="app_department"] input, .question-item[data-data-source="app_function"] input',
+        );
+        mappedSelectorInputs.forEach(input => {
+            input.addEventListener('change', async () => {
+                saveCurrentPageData();
+                await renderCurrentPage();
+            });
+        });
+
+        const signatureButtons = document.querySelectorAll('.question-item[data-question-type="Signature"] .signature-open');
+        signatureButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const questionId = button.getAttribute('data-question-id');
+                if (!questionId) return;
+                openSignatureModal(questionId);
             });
         });
     }
@@ -381,14 +638,9 @@ const SurveyApp = (function() {
         // Save current page data
         saveCurrentPageData();
 
-        // If on application selection page, build question pages
-        if (state.pages[state.currentPage].type === 'applications') {
-            await buildQuestionPages();
-        }
-
         // Move to next page
         state.currentPage++;
-        renderCurrentPage();
+        await renderCurrentPage();
     }
 
     /**
@@ -397,7 +649,7 @@ const SurveyApp = (function() {
     function prevPage() {
         if (state.currentPage > 0) {
             state.currentPage--;
-            renderCurrentPage();
+            void renderCurrentPage();
         }
     }
 
@@ -408,12 +660,6 @@ const SurveyApp = (function() {
         const page = state.pages[state.currentPage];
         
         switch (page.type) {
-            case 'intro':
-                return true;
-            case 'respondent':
-                return validateRespondentForm();
-            case 'applications':
-                return validateApplicationSelection();
             case 'questions':
                 return validateQuestions();
             default:
@@ -422,86 +668,72 @@ const SurveyApp = (function() {
     }
 
     /**
-     * Validate respondent form
-     */
-    function validateRespondentForm() {
-        let isValid = true;
-
-        // Name
-        const name = document.getElementById('respondent-name').value.trim();
-        if (!name) {
-            showFieldError('name', 'Nama wajib diisi');
-            isValid = false;
-        } else {
-            hideFieldError('name');
-        }
-
-        // Email
-        const email = document.getElementById('respondent-email').value.trim();
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!email || !emailRegex.test(email)) {
-            showFieldError('email', 'Email wajib diisi dengan format yang benar');
-            isValid = false;
-        } else {
-            hideFieldError('email');
-        }
-
-        // Business Unit
-        const buId = document.getElementById('business-unit').value;
-        if (!buId) {
-            showFieldError('bu', 'Business Unit wajib dipilih');
-            isValid = false;
-        } else {
-            hideFieldError('bu');
-        }
-
-        // Division
-        const divisionId = document.getElementById('division').value;
-        if (!divisionId) {
-            showFieldError('division', 'Division wajib dipilih');
-            isValid = false;
-        } else {
-            hideFieldError('division');
-        }
-
-        // Department
-        const departmentId = document.getElementById('department').value;
-        if (!departmentId) {
-            showFieldError('department', 'Department wajib dipilih');
-            isValid = false;
-        } else {
-            hideFieldError('department');
-        }
-
-        return isValid;
-    }
-
-    /**
-     * Validate application selection
-     */
-    function validateApplicationSelection() {
-        const checkboxes = document.querySelectorAll('#application-list input[type="checkbox"]:checked');
-        
-        if (checkboxes.length === 0) {
-            showFieldError('applications', 'Pilih minimal satu aplikasi');
-            return false;
-        }
-        
-        hideFieldError('applications');
-        return true;
-    }
-
-    /**
      * Validate questions
      */
     function validateQuestions() {
         let isValid = true;
+        const normalizeQuestionRef = (value) => {
+            const raw = String(value || '').trim();
+            if (raw.toLowerCase().startsWith('q-')) {
+                return raw.slice(2);
+            }
+            return raw;
+        };
+
+        const currentPage = state.pages[state.currentPage];
+        const pageQuestions =
+            currentPage && currentPage.type === 'questions' && currentPage.data && Array.isArray(currentPage.data.questions)
+                ? currentPage.data.questions
+                : [];
+
+        const findQuestionById = (questionId) => {
+            const normalizedQuestionId = normalizeQuestionRef(questionId);
+            return pageQuestions.find((item) => normalizeQuestionRef(item.questionId) === normalizedQuestionId);
+        };
+
+        const resolveCurrentNumericValue = (questionId) => {
+            const checked = document.querySelector(`input[name="question-${questionId}"]:checked`);
+            if (checked) {
+                const parsed = Number(checked.value);
+                if (Number.isFinite(parsed)) return parsed;
+            }
+
+            const applicationId = currentPage && currentPage.data ? currentPage.data.applicationId : null;
+            const saved = applicationId && Array.isArray(state.responses[applicationId])
+                ? state.responses[applicationId].find((item) => String(item.questionId) === String(questionId))
+                : null;
+            if (saved && saved.value) {
+                const numericValue = Number(saved.value.numericValue);
+                if (Number.isFinite(numericValue)) return numericValue;
+                const textValue = Number(String(saved.value.textValue || '').trim());
+                if (Number.isFinite(textValue)) return textValue;
+            }
+
+            return 0;
+        };
+
+        const isConditionallyRequired = (question) => {
+            if (!question || !question.options || !question.options.conditionalRequired) return false;
+            const conditional = question.options.conditionalRequired;
+            const sourceId = normalizeQuestionRef(conditional.sourceElementId);
+            if (!sourceId) return false;
+
+            const thresholdRaw = Number(conditional.threshold);
+            const threshold = Number.isFinite(thresholdRaw)
+                ? Math.min(10, Math.max(1, Math.round(thresholdRaw)))
+                : 7;
+            const sourceValue = resolveCurrentNumericValue(sourceId);
+            return Number.isFinite(sourceValue) && sourceValue > 0 && sourceValue < threshold;
+        };
+
         const questions = document.querySelectorAll('.question-item');
 
         questions.forEach(questionEl => {
             const questionId = questionEl.dataset.questionId;
             const questionType = questionEl.dataset.questionType;
-            const isMandatory = questionEl.querySelector('.form-label').classList.contains('required');
+            const questionDef = findQuestionById(questionId);
+            const staticMandatory = questionEl.querySelector('.form-label').classList.contains('required');
+            const isMandatory = staticMandatory || isConditionallyRequired(questionDef);
 
             if (!isMandatory) return;
 
@@ -552,6 +784,9 @@ const SurveyApp = (function() {
                 case 'Signature':
                     hasAnswer = document.getElementById(`signature-data-${questionId}`).value !== '';
                     break;
+                case 'HeroCover':
+                    hasAnswer = true;
+                    break;
             }
 
             if (!hasAnswer) {
@@ -572,57 +807,9 @@ const SurveyApp = (function() {
         const page = state.pages[state.currentPage];
 
         switch (page.type) {
-            case 'respondent':
-                state.respondentData = {
-                    name: document.getElementById('respondent-name').value.trim(),
-                    email: document.getElementById('respondent-email').value.trim(),
-                    businessUnitId: document.getElementById('business-unit').value,
-                    divisionId: document.getElementById('division').value,
-                    departmentId: document.getElementById('department').value
-                };
-                break;
-            case 'applications':
-                const checkboxes = document.querySelectorAll('#application-list input[type="checkbox"]:checked');
-                state.selectedApplications = Array.from(checkboxes).map(cb => ({
-                    applicationId: cb.value,
-                    applicationName: cb.closest('.checkbox-item').querySelector('.option-text strong').textContent
-                }));
-                break;
             case 'questions':
                 saveQuestionResponses(page.data.applicationId);
                 break;
-        }
-    }
-
-
-    /**
-     * Build question pages for selected applications
-     */
-    async function buildQuestionPages() {
-        // Remove existing question pages
-        state.pages = state.pages.filter(p => p.type !== 'questions');
-
-        // Fetch questions for this survey
-        try {
-            const response = await fetch(`${API_BASE_URL}/surveys/${state.surveyId}/questions`);
-            const allQuestions = await response.json();
-
-            // Create a question page for each selected application
-            state.selectedApplications.forEach(app => {
-                state.pages.push({
-                    type: 'questions',
-                    data: {
-                        applicationId: app.applicationId,
-                        applicationName: app.applicationName,
-                        questions: allQuestions
-                    }
-                });
-            });
-
-            state.totalPages = state.pages.length;
-        } catch (error) {
-            console.error('Error loading questions:', error);
-            showError('Gagal memuat pertanyaan survey');
         }
     }
 
@@ -644,19 +831,23 @@ const SurveyApp = (function() {
             switch (questionType) {
                 case 'Text':
                     value = { textValue: document.getElementById(`question-${questionId}`).value.trim() };
+                    state.answerTextByQuestionId[questionId] = value.textValue;
                     break;
                 case 'MultipleChoice':
                     const radioChecked = document.querySelector(`input[name="question-${questionId}"]:checked`);
                     value = radioChecked ? { textValue: radioChecked.value } : null;
+                    if (radioChecked) state.answerTextByQuestionId[questionId] = radioChecked.value;
                     break;
                 case 'Checkbox':
                     const checkboxesChecked = document.querySelectorAll(`input[name="question-${questionId}"]:checked`);
                     const selectedValues = Array.from(checkboxesChecked).map(cb => cb.value);
                     value = { textValue: selectedValues.join(', ') };
+                    state.answerTextByQuestionId[questionId] = selectedValues.join(', ');
                     break;
                 case 'Dropdown':
                     const dropdownValue = document.getElementById(`question-${questionId}`).value;
                     value = dropdownValue ? { textValue: dropdownValue } : null;
+                    state.answerTextByQuestionId[questionId] = dropdownValue || '';
                     break;
                 case 'MatrixLikert':
                     const matrixValues = {};
@@ -685,6 +876,7 @@ const SurveyApp = (function() {
                 case 'Date':
                     const dateValue = document.getElementById(`question-${questionId}`).value;
                     value = dateValue ? { dateValue } : null;
+                    state.answerTextByQuestionId[questionId] = dateValue || '';
                     break;
                 case 'Signature':
                     const signatureData = document.getElementById(`signature-data-${questionId}`).value;
@@ -708,6 +900,106 @@ const SurveyApp = (function() {
         });
     }
 
+    function restoreCurrentPageInputs(applicationId) {
+        const savedResponses = Array.isArray(state.responses[applicationId]) ? state.responses[applicationId] : [];
+        savedResponses.forEach(item => {
+            if (!item || !item.questionId || !item.value) return;
+            const questionId = item.questionId;
+            const value = item.value;
+            const input = document.getElementById(`question-${questionId}`);
+            if (!input) {
+                const signatureInput = document.getElementById(`signature-data-${questionId}`);
+                if (signatureInput && typeof value.textValue === 'string' && value.textValue.trim()) {
+                    signatureInput.value = value.textValue;
+                    const preview = document.getElementById(`signature-preview-${questionId}`);
+                    if (preview) {
+                        preview.innerHTML = `<img src="${value.textValue}" alt="Signature">`;
+                    }
+                }
+                return;
+            }
+
+            if (input.tagName === 'SELECT' && typeof value.textValue === 'string') {
+                const hasOption = Array.from(input.options || []).some(opt => opt.value === value.textValue);
+                if (hasOption) {
+                    input.value = value.textValue;
+                    state.answerTextByQuestionId[questionId] = value.textValue;
+                }
+                return;
+            }
+
+            if (input.tagName === 'TEXTAREA' && typeof value.textValue === 'string') {
+                input.value = value.textValue;
+                state.answerTextByQuestionId[questionId] = value.textValue;
+                return;
+            }
+
+            if (input.tagName === 'INPUT' && input.type === 'date' && value.dateValue) {
+                input.value = value.dateValue;
+                state.answerTextByQuestionId[questionId] = value.dateValue;
+                return;
+            }
+
+            if (typeof value.textValue === 'string') {
+                const radioInputs = document.querySelectorAll(`input[name="question-${questionId}"][type="radio"]`);
+                if (radioInputs.length > 0) {
+                    radioInputs.forEach((radio) => {
+                        const isMatch = radio.value === value.textValue;
+                        radio.checked = isMatch;
+                        const item = radio.closest('.radio-item');
+                        if (item) {
+                            item.classList.toggle('selected', isMatch);
+                        }
+                    });
+                    state.answerTextByQuestionId[questionId] = value.textValue;
+                    return;
+                }
+
+                const checkboxInputs = document.querySelectorAll(`input[name="question-${questionId}"][type="checkbox"]`);
+                if (checkboxInputs.length > 0) {
+                    const selectedSet = new Set(
+                        value.textValue.split(',').map(item => item.trim()).filter(Boolean),
+                    );
+                    checkboxInputs.forEach((checkbox) => {
+                        const isChecked = selectedSet.has(checkbox.value);
+                        checkbox.checked = isChecked;
+                        const item = checkbox.closest('.checkbox-item');
+                        if (item) {
+                            item.classList.toggle('selected', isChecked);
+                        }
+                    });
+                    state.answerTextByQuestionId[questionId] = value.textValue;
+                }
+            }
+        });
+    }
+
+    function resolveSelectedApplicationIds() {
+        const mappedSourceKeys = ['app_department', 'app_function'];
+        const selectedNames = mappedSourceKeys
+            .map(key => state.sourceQuestionIds[key])
+            .filter(Boolean)
+            .flatMap(questionId =>
+                String(state.answerTextByQuestionId[questionId] || '')
+                    .split(',')
+                    .map(item => item.trim())
+                    .filter(Boolean),
+            );
+
+        if (selectedNames.length === 0) {
+            return state.selectedApplications.length > 0
+                ? state.selectedApplications.map(app => app.applicationId)
+                : [state.defaultApplicationId];
+        }
+
+        const selectedNameSet = new Set(selectedNames.map(name => name.toLowerCase()));
+        const selectedIds = state.applications
+            .filter(app => selectedNameSet.has(String(app.name || '').trim().toLowerCase()))
+            .map(app => app.applicationId);
+
+        return selectedIds.length > 0 ? selectedIds : [state.defaultApplicationId];
+    }
+
     /**
      * Submit survey
      */
@@ -723,8 +1015,11 @@ const SurveyApp = (function() {
         // Prepare submission data
         const submissionData = {
             surveyId: state.surveyId,
-            respondent: state.respondentData,
-            selectedApplicationIds: state.selectedApplications.map(app => app.applicationId),
+            respondent: {
+                name: 'Responden',
+                email: `respondent+${Date.now()}@local.csi`
+            },
+            selectedApplicationIds: resolveSelectedApplicationIds(),
             responses: []
         };
 
@@ -745,7 +1040,7 @@ const SurveyApp = (function() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     surveyId: state.surveyId,
-                    email: state.respondentData.email,
+                    email: submissionData.respondent.email,
                     applicationIds: submissionData.selectedApplicationIds
                 })
             });
@@ -956,6 +1251,9 @@ const SurveyApp = (function() {
         // Update preview
         const preview = document.getElementById(`signature-preview-${questionId}`);
         preview.innerHTML = `<img src="${dataUrl}" alt="Signature">`;
+
+        // Persist signature in current page responses immediately.
+        saveCurrentPageData();
         
         // Close modal
         closeSignatureModal();
@@ -969,6 +1267,21 @@ const SurveyApp = (function() {
         document.getElementById('btn-prev').addEventListener('click', prevPage);
         document.getElementById('btn-next').addEventListener('click', nextPage);
         document.getElementById('btn-submit').addEventListener('click', submitSurvey);
+
+        const signatureCloseBtn = document.getElementById('signature-modal-close');
+        if (signatureCloseBtn) {
+            signatureCloseBtn.addEventListener('click', closeSignatureModal);
+        }
+
+        const signatureClearBtn = document.getElementById('signature-clear-btn');
+        if (signatureClearBtn) {
+            signatureClearBtn.addEventListener('click', clearSignature);
+        }
+
+        const signatureSaveBtn = document.getElementById('signature-save-btn');
+        if (signatureSaveBtn) {
+            signatureSaveBtn.addEventListener('click', saveSignature);
+        }
     }
 
     /**
@@ -982,6 +1295,11 @@ const SurveyApp = (function() {
         saveSignature
     };
 })();
+
+// Expose app for inline onclick handlers used by survey renderer/template.
+if (typeof window !== 'undefined') {
+    window.SurveyApp = SurveyApp;
+}
 
 // Initialize app when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
