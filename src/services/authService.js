@@ -40,6 +40,83 @@ class AuthService {
     this.refreshExpiration = config.jwt.refreshExpiration;
     this.sessionTimeoutMinutes = config.session.timeoutMinutes;
     this.sessionMaxDurationHours = config.session.maxDurationHours;
+    this.loginLockoutMaxAttempts = Number(config.security?.loginLockoutMaxAttempts || 5);
+    this.loginLockoutWindowMinutes = Number(config.security?.loginLockoutWindowMinutes || 15);
+    this.loginLockoutDurationMinutes = Number(config.security?.loginLockoutDurationMinutes || 15);
+  }
+
+  /**
+   * Get temporary lockout status based on recent failed login attempts.
+   * Uses AuditLogs to avoid schema changes and keeps logic centralized.
+   * @private
+   * @param {string} username - Username attempting to login
+   * @returns {Promise<{isLocked:boolean, failedCount:number, retryAfterMinutes:number}>}
+   */
+  async getLoginLockoutStatus(username) {
+    const normalizedUsername = String(username || '').trim();
+    if (!normalizedUsername) {
+      return { isLocked: false, failedCount: 0, retryAfterMinutes: 0 };
+    }
+
+    if (this.loginLockoutMaxAttempts <= 0) {
+      return { isLocked: false, failedCount: 0, retryAfterMinutes: 0 };
+    }
+
+    try {
+      const pool = await db.getPool();
+      const now = new Date();
+      const windowStart = new Date(now.getTime() - this.loginLockoutWindowMinutes * 60 * 1000);
+      const fallbackPast = new Date('1900-01-01T00:00:00.000Z');
+
+      const result = await pool.request()
+        .input('username', db.sql.NVarChar, normalizedUsername)
+        .input('windowStart', db.sql.DateTime2, windowStart)
+        .input('fallbackPast', db.sql.DateTime2, fallbackPast)
+        .query(`
+          WITH LastSuccess AS (
+            SELECT TOP 1 [Timestamp] AS LastSuccessAt
+            FROM AuditLogs
+            WHERE Username = @username
+              AND [Action] = 'Login'
+            ORDER BY [Timestamp] DESC
+          ),
+          FailedWindow AS (
+            SELECT [Timestamp]
+            FROM AuditLogs
+            WHERE Username = @username
+              AND [Action] = 'LoginFailed'
+              AND [Timestamp] >= @windowStart
+              AND [Timestamp] > ISNULL((SELECT LastSuccessAt FROM LastSuccess), @fallbackPast)
+          )
+          SELECT
+            COUNT(1) AS FailedCount,
+            MAX([Timestamp]) AS LastFailedAt
+          FROM FailedWindow
+        `);
+
+      const row = result.recordset?.[0] || {};
+      const failedCount = Number(row.FailedCount || 0);
+      const lastFailedAt = row.LastFailedAt ? new Date(row.LastFailedAt) : null;
+
+      if (failedCount < this.loginLockoutMaxAttempts || !lastFailedAt) {
+        return { isLocked: false, failedCount, retryAfterMinutes: 0 };
+      }
+
+      const lockoutUntil = new Date(lastFailedAt.getTime() + this.loginLockoutDurationMinutes * 60 * 1000);
+      if (now >= lockoutUntil) {
+        return { isLocked: false, failedCount, retryAfterMinutes: 0 };
+      }
+
+      const retryAfterMinutes = Math.max(
+        1,
+        Math.ceil((lockoutUntil.getTime() - now.getTime()) / 60000)
+      );
+
+      return { isLocked: true, failedCount, retryAfterMinutes };
+    } catch (error) {
+      logger.error('Failed to evaluate login lockout status:', error);
+      return { isLocked: false, failedCount: 0, retryAfterMinutes: 0 };
+    }
   }
 
   /**
@@ -215,6 +292,22 @@ class AuthService {
       }
 
       logger.info(`Login attempt for user: ${username}`);
+
+      // Temporary account lockout when repeated login failures exceed threshold.
+      const lockout = await this.getLoginLockoutStatus(username);
+      if (lockout.isLocked) {
+        logger.warn(`Login temporarily locked for user: ${username}`, {
+          failedCount: lockout.failedCount,
+          retryAfterMinutes: lockout.retryAfterMinutes
+        });
+        return {
+          success: false,
+          token: null,
+          refreshToken: null,
+          user: null,
+          errorMessage: `Too many login attempts. Try again in ${lockout.retryAfterMinutes} minute(s).`
+        };
+      }
 
       // Get user from database
       const dbUser = await this.getUserByUsername(username);

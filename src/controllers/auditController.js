@@ -14,29 +14,36 @@ async function getAuditLogs(req, res) {
       startDate, 
       endDate, 
       userId, 
+      username,
       action, 
       entityType,
+      entityId,
       page,
+      pageSize,
       limit
     } = req.query;
 
     const filter = {};
     if (startDate) filter.startDate = new Date(startDate);
     if (endDate) filter.endDate = new Date(endDate);
-    if (userId) filter.userId = parseInt(userId);
+    if (userId) filter.userId = userId;
+    if (username) filter.username = username;
     if (action) filter.action = action;
     if (entityType) filter.entityType = entityType;
-    if (page) filter.page = parseInt(page);
-    if (limit) filter.limit = parseInt(limit);
+    if (entityId) filter.entityId = entityId;
+    if (page) filter.page = parseInt(page, 10);
+    if (pageSize) filter.pageSize = parseInt(pageSize, 10);
+    if (limit) filter.pageSize = parseInt(limit, 10);
 
-    const logs = await auditService.getAuditLogs(filter);
+    const result = await auditService.getAuditLogs(filter);
 
     res.json({
       success: true,
-      logs: logs.logs,
-      total: logs.total,
-      page: logs.page,
-      totalPages: logs.totalPages
+      logs: result.data || [],
+      total: result.pagination?.totalRecords || 0,
+      page: result.pagination?.page || 1,
+      pageSize: result.pagination?.pageSize || 50,
+      totalPages: result.pagination?.totalPages || 1
     });
 
   } catch (error) {
@@ -57,13 +64,16 @@ async function getAuditLogs(req, res) {
 async function getEntityHistory(req, res) {
   try {
     const entityType = req.params.entityType;
-    const entityId = parseInt(req.params.entityId);
+    const entityId = req.params.entityId;
 
     const history = await auditService.getEntityHistory(entityType, entityId);
 
     res.json({
       success: true,
-      history
+      history: history.history || [],
+      totalChanges: history.totalChanges || 0,
+      entityType: history.entityType || entityType,
+      entityId: history.entityId || entityId
     });
 
   } catch (error) {

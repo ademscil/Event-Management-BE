@@ -102,6 +102,9 @@ const config = {
   security: {
     rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 900000,
     rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
+    loginLockoutMaxAttempts: parseInt(process.env.LOGIN_LOCKOUT_MAX_ATTEMPTS, 10) || 5,
+    loginLockoutWindowMinutes: parseInt(process.env.LOGIN_LOCKOUT_WINDOW_MINUTES, 10) || 15,
+    loginLockoutDurationMinutes: parseInt(process.env.LOGIN_LOCKOUT_DURATION_MINUTES, 10) || 15,
     corsOrigin: process.env.CORS_ORIGIN || '*'
   },
 

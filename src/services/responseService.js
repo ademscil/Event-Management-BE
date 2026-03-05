@@ -525,6 +525,16 @@ class ResponseService {
       return textValue;
     }
 
+    if (value.matrixValues && typeof value.matrixValues === 'object') {
+      const scores = Object.values(value.matrixValues)
+        .map((item) => Number(String(item || '').trim()))
+        .filter((item) => Number.isFinite(item) && item > 0);
+
+      if (scores.length > 0) {
+        return scores.reduce((sum, item) => sum + item, 0) / scores.length;
+      }
+    }
+
     return null;
   }
 

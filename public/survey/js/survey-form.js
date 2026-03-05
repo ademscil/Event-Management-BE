@@ -49,6 +49,7 @@ const SurveyApp = (function() {
                 dataSource: normalizeDataSource(options.dataSource),
                 displayCondition: String(options.displayCondition || 'always')
             };
+            normalized.pageTitle = String(options.pageTitle || '').trim();
             return normalized;
         }
 
@@ -58,6 +59,7 @@ const SurveyApp = (function() {
                 dataSource: normalizeDataSource(options.dataSource),
                 displayCondition: String(options.displayCondition || 'always')
             };
+            normalized.pageTitle = String(options.pageTitle || '').trim();
             return normalized;
         }
 
@@ -71,6 +73,7 @@ const SurveyApp = (function() {
                     scaleMax: 10,
                     displayCondition: String(options.displayCondition || 'always')
                 };
+                normalized.pageTitle = String(options.pageTitle || '').trim();
                 return normalized;
             }
 
@@ -82,6 +85,7 @@ const SurveyApp = (function() {
                 scaleMax: 10,
                 displayCondition: String(options.displayCondition || 'always')
             };
+            normalized.pageTitle = String(options.pageTitle || '').trim();
             return normalized;
         }
 
@@ -91,10 +95,12 @@ const SurveyApp = (function() {
                 commentRequiredBelowRating: options.commentRequiredBelowRating || null,
                 displayCondition: String(options.displayCondition || 'always')
             };
+            normalized.pageTitle = String(options.pageTitle || '').trim();
             return normalized;
         }
 
         normalized.options = options;
+        normalized.pageTitle = String(options.pageTitle || '').trim();
         return normalized;
     }
 
@@ -362,6 +368,66 @@ const SurveyApp = (function() {
         });
     }
 
+    function sanitizeIdentityValue(value, maxLength) {
+        const raw = String(value || '').trim();
+        if (!raw) return '';
+        return raw.slice(0, maxLength);
+    }
+
+    function normalizeEmail(value) {
+        const email = sanitizeIdentityValue(value, 200).toLowerCase();
+        if (!email) return '';
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailPattern.test(email) ? email : '';
+    }
+
+    function getHostBasedFallbackEmail(localId) {
+        const host = String(window.location.hostname || 'localhost')
+            .toLowerCase()
+            .replace(/[^a-z0-9.-]/g, '');
+        const domain = host.includes('.') ? host : `${host}.local`;
+        return `${localId}@${domain}`;
+    }
+
+    function getOrCreateRespondentLocalId() {
+        const storageKey = `csi.respondent.${state.surveyId}`;
+        try {
+            const existing = localStorage.getItem(storageKey);
+            if (existing && /^[a-z0-9-]{6,64}$/i.test(existing)) {
+                return existing.toLowerCase();
+            }
+        } catch (error) {
+            console.warn('Unable to read respondent identity from localStorage:', error);
+        }
+
+        const randomId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID().replace(/[^a-z0-9-]/gi, '').toLowerCase()
+            : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        const localId = `respondent-${randomId}`.slice(0, 64);
+
+        try {
+            localStorage.setItem(storageKey, localId);
+        } catch (error) {
+            console.warn('Unable to persist respondent identity to localStorage:', error);
+        }
+
+        return localId;
+    }
+
+    function resolveRespondentIdentity() {
+        const nameFromLink = sanitizeIdentityValue(state.respondentData.name, 200);
+        const emailFromLink = normalizeEmail(state.respondentData.email);
+        const localId = getOrCreateRespondentLocalId();
+
+        const respondentName = nameFromLink || 'Bapak/Ibu Responden';
+        const respondentEmail = emailFromLink || getHostBasedFallbackEmail(localId);
+
+        return {
+            name: respondentName,
+            email: respondentEmail
+        };
+    }
+
     /**
      * Initialize application
      */
@@ -370,6 +436,10 @@ const SurveyApp = (function() {
             // Get survey ID from URL parameter
             const urlParams = new URLSearchParams(window.location.search);
             state.surveyId = urlParams.get('id');
+            state.respondentData = {
+                name: sanitizeIdentityValue(urlParams.get('respondentName') || urlParams.get('name'), 200),
+                email: normalizeEmail(urlParams.get('respondentEmail') || urlParams.get('email'))
+            };
 
             if (!state.surveyId) {
                 showError('Survey ID tidak ditemukan. Silakan gunakan link yang valid.');
@@ -454,12 +524,15 @@ const SurveyApp = (function() {
                 .get(pageNumber)
                 .slice()
                 .sort((a, b) => Number(a.displayOrder || 0) - Number(b.displayOrder || 0));
+            const resolvedPageTitle =
+                pageQuestions.find((question) => String(question.pageTitle || '').trim() !== '')?.pageTitle ||
+                `Page ${pageNumber}`;
 
             state.pages.push({
                 type: 'questions',
                 data: {
                     pageNumber,
-                    pageTitle: `Halaman ${pageNumber}`,
+                    pageTitle: resolvedPageTitle,
                     applicationId: state.defaultApplicationId,
                     applicationName: state.defaultApplicationName,
                     questions: pageQuestions
@@ -482,7 +555,11 @@ const SurveyApp = (function() {
                 {
                     const hydratedQuestions = await hydrateQuestionDataSources(page.data.questions);
                     const visibleQuestions = filterQuestionsByVisibility(hydratedQuestions);
-                    content.innerHTML = SurveyRenderer.renderQuestionsPage(visibleQuestions, page.data.pageTitle);
+                    content.innerHTML = SurveyRenderer.renderQuestionsPage(
+                        visibleQuestions,
+                        page.data.pageTitle,
+                        page.data.pageSubtitle
+                    );
                 }
                 restoreCurrentPageInputs(page.data.applicationId);
                 attachQuestionEventListeners();
@@ -732,7 +809,8 @@ const SurveyApp = (function() {
             const questionId = questionEl.dataset.questionId;
             const questionType = questionEl.dataset.questionType;
             const questionDef = findQuestionById(questionId);
-            const staticMandatory = questionEl.querySelector('.form-label').classList.contains('required');
+            const labelEl = questionEl.querySelector('.form-label');
+            const staticMandatory = labelEl ? labelEl.classList.contains('required') : Boolean(questionDef && questionDef.isMandatory);
             const isMandatory = staticMandatory || isConditionallyRequired(questionDef);
 
             if (!isMandatory) return;
@@ -741,7 +819,8 @@ const SurveyApp = (function() {
 
             switch (questionType) {
                 case 'Text':
-                    const textValue = document.getElementById(`question-${questionId}`).value.trim();
+                    const textInput = document.getElementById(`question-${questionId}`);
+                    const textValue = textInput && typeof textInput.value === 'string' ? textInput.value.trim() : '';
                     hasAnswer = textValue.length > 0;
                     break;
                 case 'MultipleChoice':
@@ -751,7 +830,10 @@ const SurveyApp = (function() {
                     hasAnswer = document.querySelectorAll(`input[name="question-${questionId}"]:checked`).length > 0;
                     break;
                 case 'Dropdown':
-                    hasAnswer = document.getElementById(`question-${questionId}`).value !== '';
+                    {
+                        const dropdownInput = document.getElementById(`question-${questionId}`);
+                        hasAnswer = dropdownInput && typeof dropdownInput.value === 'string' ? dropdownInput.value !== '' : false;
+                    }
                     break;
                 case 'MatrixLikert':
                     const rows = questionEl.querySelectorAll('.matrix-table tbody tr');
@@ -767,7 +849,8 @@ const SurveyApp = (function() {
                     if (hasAnswer) {
                         const commentSection = document.getElementById(`comment-${questionId}`);
                         if (commentSection && commentSection.style.display !== 'none') {
-                            const commentText = document.getElementById(`comment-text-${questionId}`).value.trim();
+                            const commentInput = document.getElementById(`comment-text-${questionId}`);
+                            const commentText = commentInput && typeof commentInput.value === 'string' ? commentInput.value.trim() : '';
                             if (!commentText) {
                                 showFieldError(`comment-${questionId}`, 'Komentar wajib diisi untuk rating rendah');
                                 isValid = false;
@@ -779,10 +862,16 @@ const SurveyApp = (function() {
                     }
                     break;
                 case 'Date':
-                    hasAnswer = document.getElementById(`question-${questionId}`).value !== '';
+                    {
+                        const dateInput = document.getElementById(`question-${questionId}`);
+                        hasAnswer = dateInput && typeof dateInput.value === 'string' ? dateInput.value !== '' : false;
+                    }
                     break;
                 case 'Signature':
-                    hasAnswer = document.getElementById(`signature-data-${questionId}`).value !== '';
+                    {
+                        const signatureInput = document.getElementById(`signature-data-${questionId}`);
+                        hasAnswer = signatureInput && typeof signatureInput.value === 'string' ? signatureInput.value !== '' : false;
+                    }
                     break;
                 case 'HeroCover':
                     hasAnswer = true;
@@ -1012,13 +1101,12 @@ const SurveyApp = (function() {
         // Save last page data
         saveCurrentPageData();
 
+        const respondentIdentity = resolveRespondentIdentity();
+
         // Prepare submission data
         const submissionData = {
             surveyId: state.surveyId,
-            respondent: {
-                name: 'Responden',
-                email: `respondent+${Date.now()}@local.csi`
-            },
+            respondent: respondentIdentity,
             selectedApplicationIds: resolveSelectedApplicationIds(),
             responses: []
         };
