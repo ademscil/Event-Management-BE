@@ -35,6 +35,11 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('should successfully login with LDAP credentials', async () => {
+      // Mock lockout check
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{ FailedCount: 0, LastFailedAt: null }]
+      });
+
       // Mock user from database
       mockRequest.query.mockResolvedValueOnce({
         recordset: [{
@@ -78,6 +83,11 @@ describe('AuthService', () => {
     });
 
     it('should fail login with invalid credentials', async () => {
+      // Mock lockout check
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{ FailedCount: 0, LastFailedAt: null }]
+      });
+
       // Mock user from database
       mockRequest.query.mockResolvedValueOnce({
         recordset: [{
@@ -106,6 +116,11 @@ describe('AuthService', () => {
     });
 
     it('should fail login for non-existent user', async () => {
+      // Mock lockout check
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{ FailedCount: 0, LastFailedAt: null }]
+      });
+
       // Mock user not found
       mockRequest.query.mockResolvedValueOnce({
         recordset: []
@@ -123,6 +138,23 @@ describe('AuthService', () => {
 
       expect(result.success).toBe(false);
       expect(result.errorMessage).toBe('Username and password are required');
+    });
+
+    it('should block login when account is temporarily locked', async () => {
+      // Mock lockout check indicates locked state
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{
+          FailedCount: 5,
+          LastFailedAt: new Date()
+        }]
+      });
+
+      const result = await authService.login('testuser', 'password123', '127.0.0.1', 'test-agent');
+
+      expect(result.success).toBe(false);
+      expect(result.token).toBeNull();
+      expect(result.errorMessage).toMatch(/Too many login attempts/i);
+      expect(ldapService.authenticate).not.toHaveBeenCalled();
     });
   });
 

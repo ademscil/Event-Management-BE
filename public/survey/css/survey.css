@@ -241,6 +241,43 @@ body {
     margin-bottom: var(--spacing-xl);
 }
 
+/* Hero Cover (Rendered Question) */
+.hero-cover-question {
+    display: grid;
+    gap: var(--spacing-md);
+    justify-items: center;
+    align-items: start;
+    text-align: center;
+    margin: 0 auto;
+}
+
+.hero-cover-question img {
+    width: 100%;
+    max-width: 760px;
+    max-height: 420px;
+    object-fit: contain;
+    object-position: center;
+    border-radius: var(--radius-lg);
+    display: block;
+    margin: 0 auto;
+}
+
+.hero-cover-copy {
+    width: 100%;
+    max-width: 760px;
+}
+
+.hero-cover-copy h3 {
+    margin: 0;
+    font-size: clamp(1.375rem, 2.4vw, 1.9rem);
+    color: var(--gray-900);
+}
+
+.hero-cover-copy p {
+    margin-top: var(--spacing-sm);
+    color: var(--gray-600);
+}
+
 .survey-info {
     background-color: var(--gray-50);
     padding: var(--spacing-lg);

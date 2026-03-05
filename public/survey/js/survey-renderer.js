@@ -6,17 +6,28 @@
 const SurveyRenderer = (function() {
     'use strict';
 
+    function normalizePromptText(value) {
+        const text = String(value || '').trim();
+        if (text.toLowerCase() === 'untitled question') {
+            return '';
+        }
+        return text;
+    }
+
     /**
      * Render questions page
      */
-    function renderQuestionsPage(questions, pageTitle) {
+    function renderQuestionsPage(questions, pageTitle, pageSubtitle) {
         const title = pageTitle && String(pageTitle).trim() !== ''
             ? String(pageTitle).trim()
             : 'Pertanyaan Survey';
+        const subtitle = pageSubtitle && String(pageSubtitle).trim() !== ''
+            ? String(pageSubtitle).trim()
+            : '';
         return `
             <div class="questions-page">
                 <h2>${escapeHtml(title)}</h2>
-                <p class="form-subtitle">Mohon jawab semua pertanyaan dengan jujur</p>
+                ${subtitle ? `<p class="form-subtitle">${escapeHtml(subtitle)}</p>` : ''}
 
                 ${questions.map((question, index) => renderQuestion(question, index)).join('')}
             </div>
@@ -30,16 +41,19 @@ const SurveyRenderer = (function() {
         const options = question.options || {};
         const required = question.isMandatory ? 'required' : '';
         const questionId = question.questionId;
+        const promptText = normalizePromptText(question.promptText);
+        const subtitle = String(question.subtitle || '').trim();
+        const shouldRenderLabel = question.type !== 'HeroCover' && promptText !== '';
 
         const dataSource = String(options.dataSource || '');
         const displayCondition = String(options.displayCondition || 'always');
 
         let html = `
             <div class="form-group question-item" data-question-id="${questionId}" data-question-type="${question.type}" data-data-source="${escapeHtml(dataSource)}" data-display-condition="${escapeHtml(displayCondition)}">
-                <label class="form-label ${required}" for="question-${questionId}">
-                    ${index + 1}. ${escapeHtml(question.promptText)}
-                </label>
-                ${question.subtitle ? `<span class="form-subtitle">${escapeHtml(question.subtitle)}</span>` : ''}
+                ${shouldRenderLabel ? `<label class="form-label ${required}" for="question-${questionId}">
+                    ${index + 1}. ${escapeHtml(promptText)}
+                </label>` : ''}
+                ${subtitle && question.type !== 'HeroCover' ? `<span class="form-subtitle">${escapeHtml(subtitle)}</span>` : ''}
                 ${question.type !== 'HeroCover' && question.imageUrl ? `<div class="question-image"><img src="${question.imageUrl}" alt="Question Image"></div>` : ''}
         `;
 
@@ -85,12 +99,14 @@ const SurveyRenderer = (function() {
 
     function renderHeroCoverQuestion(question, options) {
         const coverUrl = question.imageUrl || options.heroImageUrl || '';
+        const heroTitle = normalizePromptText(question.promptText);
+        const subtitle = String(question.subtitle || '').trim();
         return `
             <div class="hero-cover-question">
                 ${coverUrl ? `<img src="${coverUrl}" alt="Hero Cover">` : ''}
                 <div class="hero-cover-copy">
-                    <h3>${escapeHtml(question.promptText || '')}</h3>
-                    ${question.subtitle ? `<p>${escapeHtml(question.subtitle)}</p>` : ''}
+                    ${heroTitle ? `<h3>${escapeHtml(heroTitle)}</h3>` : ''}
+                    ${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}
                 </div>
             </div>
         `;
