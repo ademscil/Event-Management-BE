@@ -6,6 +6,7 @@
 const sql = require('mssql');
 const db = require('../database/connection');
 const logger = require('../config/logger');
+const publishCycleService = require('./publishCycleService');
 
 /**
  * Custom error classes
@@ -60,6 +61,16 @@ class ApprovalService {
     if (!this.pool) {
       this.pool = await db.getPool();
     }
+  }
+
+  async applyCurrentCycleFilter(request, query, surveyId, responseAlias = 'r') {
+    if (!surveyId) return query;
+    const currentCycle = await publishCycleService.getCurrentCycle(this.pool, surveyId);
+    if (!currentCycle?.PublishCycleId) return query;
+    if (!request.parameters || !request.parameters.publishCycleId) {
+      request.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
+    }
+    return `${query} AND ${responseAlias}.PublishCycleId = @publishCycleId`;
   }
 
   async proposeTakeoutForQuestion(request) {
@@ -255,6 +266,7 @@ class ApprovalService {
       `;
       const request = this.pool.request();
       request.input('surveyId', sql.UniqueIdentifier, surveyId);
+      query = await this.applyCurrentCycleFilter(request, query, surveyId);
       if (applicationId) {
         query += ' AND r.ApplicationId = @applicationId';
         request.input('applicationId', sql.UniqueIdentifier, applicationId);
@@ -460,6 +472,7 @@ class ApprovalService {
       if (filter.surveyId) {
         query += ' AND q.SurveyId = @surveyId';
         request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+        query = await this.applyCurrentCycleFilter(request, query, filter.surveyId);
       }
       if (filter.functionId) {
         query += ' AND f.FunctionId = @functionId';
@@ -497,6 +510,7 @@ class ApprovalService {
       if (filter.surveyId) {
         query += ' AND s.SurveyId = @surveyId';
         request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+        query = await this.applyCurrentCycleFilter(request, query, filter.surveyId);
       }
       if (filter.applicationId) {
         query += ' AND r.ApplicationId = @applicationId';
@@ -617,6 +631,7 @@ class ApprovalService {
       if (filter.surveyId) {
         query += ' AND s.SurveyId = @surveyId';
         request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+        query = await this.applyCurrentCycleFilter(request, query, filter.surveyId);
       }
       if (filter.functionId) {
         query += ' AND f.FunctionId = @functionId';
@@ -660,6 +675,7 @@ class ApprovalService {
       if (filter.surveyId) {
         query += ' AND s.SurveyId = @surveyId';
         request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+        query = await this.applyCurrentCycleFilter(request, query, filter.surveyId);
       }
       if (filter.applicationId) {
         query += ' AND r.ApplicationId = @applicationId';
@@ -792,6 +808,7 @@ class ApprovalService {
       if (filter.surveyId) {
         query += ' AND s.SurveyId = @surveyId';
         request.input('surveyId', sql.UniqueIdentifier, filter.surveyId);
+        query = await this.applyCurrentCycleFilter(request, query, filter.surveyId);
       }
       if (filter.functionId) {
         query += ' AND f.FunctionId = @functionId';
@@ -825,6 +842,7 @@ class ApprovalService {
       `;
       const request = this.pool.request();
       request.input('surveyId', sql.UniqueIdentifier, surveyId);
+      query = await this.applyCurrentCycleFilter(request, query, surveyId);
       if (options.questionId) {
         query += ' AND q.QuestionId = @questionId';
         request.input('questionId', sql.UniqueIdentifier, options.questionId);
@@ -859,7 +877,7 @@ class ApprovalService {
         else if (row.TakeoutStatus === ResponseStatus.TAKEN_OUT) stats.takenOut = row.Count;
         else if (row.TakeoutStatus === ResponseStatus.REJECTED) stats.rejected = row.Count;
       });
-      const overallResult = await request.query(`
+      const overallQuery = await this.applyCurrentCycleFilter(request, `
         SELECT qr.TakeoutStatus, COUNT(*) as Count
         FROM QuestionResponses qr
         INNER JOIN Questions q ON qr.QuestionId = q.QuestionId
@@ -869,7 +887,8 @@ class ApprovalService {
         ${options.applicationId ? 'AND r.ApplicationId = @applicationId' : ''}
         ${options.departmentId ? 'AND r.DepartmentId = @departmentId' : ''}
         GROUP BY qr.TakeoutStatus
-      `);
+      `, surveyId);
+      const overallResult = await request.query(overallQuery);
       const overall = { active: 0, proposedTakeout: 0, takenOut: 0, rejected: 0, total: 0 };
       overallResult.recordset.forEach(row => {
         overall.total += row.Count;

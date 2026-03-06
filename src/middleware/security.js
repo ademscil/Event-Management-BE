@@ -289,6 +289,61 @@ function contentTypeValidation(req, res, next) {
 }
 
 /**
+ * Accept Header Validation
+ * Ensure API clients request supported response types for JSON endpoints.
+ */
+function acceptHeaderValidation(req, res, next) {
+  if (!req.path.startsWith('/api/')) {
+    return next();
+  }
+
+  const acceptHeader = req.headers.accept;
+  if (!acceptHeader) {
+    return next();
+  }
+
+  const normalized = String(acceptHeader).toLowerCase();
+  const bypassPatterns = [
+    /\/download(?:\/|$)/,
+    /\/template(?:\/|$)/,
+    /\/export(?:\/|$)/,
+    /\/pdf(?:\/|$)/,
+    /\/excel(?:\/|$)/,
+    /\/uploads(?:\/|$)/
+  ];
+
+  if (bypassPatterns.some((pattern) => pattern.test(req.path))) {
+    return next();
+  }
+
+  const allowedAccepts = [
+    '*/*',
+    'application/json',
+    'application/*',
+    'application/problem+json',
+    'text/plain'
+  ];
+
+  const allowsJson = allowedAccepts.some((value) => normalized.includes(value)) || /\bapplication\/[\w.+-]*json\b/.test(normalized);
+
+  if (!allowsJson) {
+    logger.warn('Invalid accept header', {
+      ip: req.ip,
+      path: req.path,
+      method: req.method,
+      accept: acceptHeader
+    });
+
+    return res.status(406).json({
+      error: 'Not Acceptable',
+      message: 'Accept header must allow application/json for this endpoint'
+    });
+  }
+
+  next();
+}
+
+/**
  * Request Size Limit Validation
  * Additional validation beyond body-parser limits
  */
@@ -445,6 +500,7 @@ module.exports = {
   sqlInjectionProtection,
   xssProtection,
   contentTypeValidation,
+  acceptHeaderValidation,
   requestSizeValidation,
   
   // Access Control

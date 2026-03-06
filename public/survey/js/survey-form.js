@@ -37,6 +37,24 @@ const SurveyApp = (function() {
 
     const API_BASE_URL = '/api/v1';
 
+    function showNotice(title, message) {
+        const modal = document.getElementById('notice-modal');
+        const titleEl = document.getElementById('notice-modal-title');
+        const messageEl = document.getElementById('notice-modal-message');
+        if (!modal || !titleEl || !messageEl) return;
+
+        titleEl.textContent = title || 'Informasi';
+        messageEl.textContent = message || '';
+        modal.style.display = 'flex';
+    }
+
+    function hideNotice() {
+        const modal = document.getElementById('notice-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+    }
+
     function normalizeQuestion(question) {
         const options = question.options || {};
         const normalized = { ...question, options: {} };
@@ -1136,7 +1154,7 @@ const SurveyApp = (function() {
             const duplicateResult = await duplicateCheck.json();
             
             if (duplicateResult.isDuplicate) {
-                alert(duplicateResult.message || 'Anda sudah mengisi survey untuk aplikasi ini sebelumnya.');
+                showNotice('Duplikasi Response', duplicateResult.message || 'Anda sudah mengisi survey untuk aplikasi ini sebelumnya.');
                 btnSubmit.disabled = false;
                 btnSubmit.textContent = 'Kirim Survey';
                 return;
@@ -1160,7 +1178,7 @@ const SurveyApp = (function() {
 
         } catch (error) {
             console.error('Submission error:', error);
-            alert(error.message || 'Gagal mengirim survey. Silakan coba lagi.');
+            showNotice('Gagal Mengirim Survey', error.message || 'Gagal mengirim survey. Silakan coba lagi.');
             btnSubmit.disabled = false;
             btnSubmit.textContent = 'Kirim Survey';
         }
@@ -1369,6 +1387,25 @@ const SurveyApp = (function() {
         const signatureSaveBtn = document.getElementById('signature-save-btn');
         if (signatureSaveBtn) {
             signatureSaveBtn.addEventListener('click', saveSignature);
+        }
+
+        const noticeCloseBtn = document.getElementById('notice-modal-close');
+        if (noticeCloseBtn) {
+            noticeCloseBtn.addEventListener('click', hideNotice);
+        }
+
+        const noticeOkBtn = document.getElementById('notice-modal-ok');
+        if (noticeOkBtn) {
+            noticeOkBtn.addEventListener('click', hideNotice);
+        }
+
+        const noticeModal = document.getElementById('notice-modal');
+        if (noticeModal) {
+            noticeModal.addEventListener('click', (event) => {
+                if (event.target === noticeModal) {
+                    hideNotice();
+                }
+            });
         }
     }
 

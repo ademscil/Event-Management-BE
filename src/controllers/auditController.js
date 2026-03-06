@@ -15,6 +15,8 @@ async function getAuditLogs(req, res) {
       endDate, 
       userId, 
       username,
+      keyword,
+      searchBy,
       action, 
       entityType,
       entityId,
@@ -28,6 +30,8 @@ async function getAuditLogs(req, res) {
     if (endDate) filter.endDate = new Date(endDate);
     if (userId) filter.userId = userId;
     if (username) filter.username = username;
+    if (keyword) filter.keyword = keyword;
+    if (searchBy) filter.searchBy = searchBy;
     if (action) filter.action = action;
     if (entityType) filter.entityType = entityType;
     if (entityId) filter.entityId = entityId;
