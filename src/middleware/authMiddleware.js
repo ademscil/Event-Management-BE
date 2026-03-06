@@ -74,19 +74,43 @@ const PERMISSIONS = {
  * @param {Object} req - Express request object
  * @returns {string|null}
  */
-function extractToken(req) {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader) {
+function getCookieValue(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) {
     return null;
   }
 
-  // Support both "Bearer <token>" and just "<token>"
-  if (authHeader.startsWith('Bearer ')) {
-    return authHeader.substring(7);
+  const cookies = cookieHeader.split(';');
+  for (const cookie of cookies) {
+    const [key, ...rest] = cookie.trim().split('=');
+    if (key === name) {
+      return decodeURIComponent(rest.join('='));
+    }
   }
 
-  return authHeader;
+  return null;
+}
+
+function extractToken(req) {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader) {
+    const bearerToken = authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : authHeader;
+
+    const normalizedToken = String(bearerToken || '').trim();
+    if (
+      normalizedToken &&
+      normalizedToken !== 'null' &&
+      normalizedToken !== 'undefined' &&
+      normalizedToken !== '__cookie_session__'
+    ) {
+      return normalizedToken;
+    }
+  }
+
+  return getCookieValue(req, 'csi_access_token');
 }
 
 /**

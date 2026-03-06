@@ -3,6 +3,7 @@ const pool = require('../database/connection');
 const logger = require('../config/logger');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
+const publishCycleService = require('./publishCycleService');
 
 /**
  * Custom error classes
@@ -37,6 +38,11 @@ class ReportService {
     this.pool = pool;
   }
 
+  async createRequest() {
+    const dbPool = await this.pool.getPool();
+    return dbPool.request();
+  }
+
   /**
    * Generate report with filtering
    * @param {Object} request - Report request parameters
@@ -56,7 +62,7 @@ class ReportService {
       logger.info(`Generating report for surveyId: ${request.surveyId}`);
 
       // Validate survey exists
-      const surveyResult = await this.pool.request()
+      const surveyResult = await (await this.createRequest())
         .input('surveyId', sql.UniqueIdentifier, request.surveyId)
         .query(`
           SELECT SurveyId, Title, Description, StartDate, EndDate, Status
@@ -69,6 +75,24 @@ class ReportService {
       }
 
       const survey = surveyResult.recordset[0];
+      const currentCycle = await publishCycleService.getCurrentCycle(this.pool, request.surveyId);
+
+      const responseCountRequest = await this.createRequest();
+      responseCountRequest.input('surveyId', sql.UniqueIdentifier, request.surveyId);
+      let responseCountQuery = `
+          SELECT COUNT(DISTINCT ResponseId) AS TotalResponses
+          FROM Responses
+          WHERE SurveyId = @surveyId
+        `;
+      if (currentCycle?.PublishCycleId) {
+        responseCountQuery += ' AND PublishCycleId = @publishCycleId';
+        responseCountRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
+      }
+      const responseCountResult = await responseCountRequest.query(responseCountQuery);
+      const totalResponses = Number(responseCountResult.recordset?.[0]?.TotalResponses || 0);
+      if (totalResponses === 0) {
+        throw new ValidationError('Generate report hanya bisa dilakukan jika survey sudah memiliki response.');
+      }
 
       // Apply Department Head data isolation
       if (request.userRole === 'DepartmentHead' && request.userId) {
@@ -82,7 +106,7 @@ class ReportService {
 
       // Build filter query
       let filterConditions = ['r.SurveyId = @surveyId'];
-      const sqlRequest = this.pool.request();
+      const sqlRequest = (await this.createRequest());
       sqlRequest.input('surveyId', sql.UniqueIdentifier, request.surveyId);
 
       // Apply hierarchical filters
@@ -104,6 +128,11 @@ class ReportService {
       if (request.applicationId) {
         filterConditions.push('r.ApplicationId = @applicationId');
         sqlRequest.input('applicationId', sql.UniqueIdentifier, request.applicationId);
+      }
+
+      if (currentCycle?.PublishCycleId) {
+        filterConditions.push('r.PublishCycleId = @publishCycleId');
+        sqlRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
       }
 
       // Apply function filter through application mapping
@@ -195,6 +224,10 @@ class ReportService {
 
       const distributionResult = await sqlRequest.query(distributionQuery);
 
+      if (currentCycle?.PublishCycleId) {
+        await publishCycleService.markGenerated(this.pool, currentCycle.PublishCycleId, request.userId || null);
+      }
+
       return {
         survey: {
           surveyId: survey.SurveyId,
@@ -248,41 +281,127 @@ class ReportService {
    * Get report selection list (all surveys with metadata)
    * @returns {Promise<Array>} List of surveys with metadata
    */
-  async getReportSelectionList() {
+  async getReportSelectionList(options = {}) {
     try {
       logger.info('Getting report selection list');
 
-      const query = `
-        SELECT 
-          s.SurveyId,
-          s.Title,
-          s.Description,
-          s.StartDate,
-          s.EndDate,
-          s.Status,
-          CONCAT(
-            FORMAT(s.StartDate, 'dd MMM yyyy'), 
-            ' - ', 
-            FORMAT(s.EndDate, 'dd MMM yyyy')
-          ) as Period,
-          COUNT(DISTINCT r.ResponseId) as RespondentCount,
-          CASE 
-            WHEN COUNT(DISTINCT r.ResponseId) > 0 THEN 1
-            ELSE 0
-          END as HasGeneratedReport
-        FROM Surveys s
-        LEFT JOIN Responses r ON s.SurveyId = r.SurveyId
-        GROUP BY 
-          s.SurveyId, 
-          s.Title, 
-          s.Description, 
-          s.StartDate, 
-          s.EndDate, 
-          s.Status
-        ORDER BY s.StartDate DESC
-      `;
+      const userId = options?.userId ? String(options.userId) : '';
+      const userRole = options?.userRole ? String(options.userRole) : '';
+      const normalizedRole = userRole.toLowerCase().replace(/[\s_-]/g, '');
+      const isAdminEvent = normalizedRole === 'adminevent';
 
-      const result = await this.pool.request().query(query);
+      const sqlRequest = (await this.createRequest());
+      let roleFilter = '';
+      if (isAdminEvent && userId) {
+        sqlRequest.input('adminUserId', sql.UniqueIdentifier, userId);
+        roleFilter = `
+          AND (
+            s.AssignedAdminId = @adminUserId
+            OR EXISTS (
+              SELECT 1
+              FROM SurveyAdminAssignments saa
+              WHERE saa.SurveyId = s.SurveyId
+                AND saa.AdminUserId = @adminUserId
+            )
+          )
+        `;
+      }
+
+      const publishCycleEnabled = await publishCycleService.hasSupport(this.pool);
+      const query = publishCycleEnabled
+        ? `
+            WITH CurrentCycles AS (
+              SELECT
+                pc.SurveyId,
+                pc.PublishCycleId,
+                pc.CycleNumber,
+                pc.GeneratedAt,
+                ROW_NUMBER() OVER (
+                  PARTITION BY pc.SurveyId
+                  ORDER BY pc.IsCurrent DESC, pc.CycleNumber DESC, pc.PublishedAt DESC
+                ) AS rn
+              FROM SurveyPublishCycles pc
+            )
+            SELECT 
+              s.SurveyId,
+              s.Title,
+              s.Description,
+              s.StartDate,
+              s.EndDate,
+              s.Status,
+              CONCAT(
+                FORMAT(s.StartDate, 'dd MMM yyyy'), 
+                ' - ', 
+                FORMAT(s.EndDate, 'dd MMM yyyy')
+              ) as Period,
+              COUNT(DISTINCT r.ResponseId) as RespondentCount,
+              CASE 
+                WHEN cc.GeneratedAt IS NOT NULL THEN 1
+                ELSE 0
+              END as HasGeneratedReport,
+              cc.PublishCycleId as CurrentPublishCycleId,
+              cc.CycleNumber as CurrentCycleNumber,
+              cc.GeneratedAt
+            FROM Surveys s
+            LEFT JOIN CurrentCycles cc
+              ON cc.SurveyId = s.SurveyId
+             AND cc.rn = 1
+            LEFT JOIN Responses r
+              ON s.SurveyId = r.SurveyId
+             AND (
+                cc.PublishCycleId IS NULL
+                OR r.PublishCycleId = cc.PublishCycleId
+             )
+            WHERE 1 = 1
+            ${roleFilter}
+            GROUP BY 
+              s.SurveyId, 
+              s.Title, 
+              s.Description, 
+              s.StartDate, 
+              s.EndDate, 
+              s.Status,
+              cc.PublishCycleId,
+              cc.CycleNumber,
+              cc.GeneratedAt
+            ORDER BY s.StartDate DESC
+          `
+        : `
+            SELECT 
+              s.SurveyId,
+              s.Title,
+              s.Description,
+              s.StartDate,
+              s.EndDate,
+              s.Status,
+              CONCAT(
+                FORMAT(s.StartDate, 'dd MMM yyyy'), 
+                ' - ', 
+                FORMAT(s.EndDate, 'dd MMM yyyy')
+              ) as Period,
+              COUNT(DISTINCT r.ResponseId) as RespondentCount,
+              CASE 
+                WHEN COUNT(DISTINCT r.ResponseId) > 0 THEN 1
+                ELSE 0
+              END as HasGeneratedReport,
+              CAST(NULL AS UNIQUEIDENTIFIER) as CurrentPublishCycleId,
+              CAST(NULL AS INT) as CurrentCycleNumber,
+              CAST(NULL AS DATETIME2) as GeneratedAt
+            FROM Surveys s
+            LEFT JOIN Responses r ON s.SurveyId = r.SurveyId
+            WHERE 1 = 1
+            ${roleFilter}
+            GROUP BY 
+              s.SurveyId, 
+              s.Title, 
+              s.Description, 
+              s.StartDate, 
+              s.EndDate, 
+              s.Status
+            ORDER BY s.StartDate DESC
+          `;
+
+      const result = await sqlRequest.query(query);
 
       return result.recordset.map(survey => ({
         surveyId: survey.SurveyId,
@@ -291,7 +410,10 @@ class ReportService {
         period: survey.Period,
         status: survey.Status,
         respondentCount: survey.RespondentCount || 0,
-        hasGeneratedReport: survey.HasGeneratedReport === 1
+        hasGeneratedReport: survey.HasGeneratedReport === 1,
+        currentPublishCycleId: survey.CurrentPublishCycleId || null,
+        currentCycleNumber: survey.CurrentCycleNumber || null,
+        generatedAt: survey.GeneratedAt || null
       }));
 
     } catch (error) {
@@ -310,8 +432,9 @@ class ReportService {
     try {
       logger.info(`Getting takeout comparison for surveyId: ${surveyId}`);
 
-      const sqlRequest = this.pool.request();
+      const sqlRequest = (await this.createRequest());
       sqlRequest.input('surveyId', sql.UniqueIdentifier, surveyId);
+      const currentCycle = await publishCycleService.getCurrentCycle(this.pool, surveyId);
 
       let functionFilter = '';
       if (functionId) {
@@ -323,6 +446,12 @@ class ReportService {
           )
         `;
         sqlRequest.input('functionId', sql.UniqueIdentifier, functionId);
+      }
+
+      let cycleFilter = '';
+      if (currentCycle?.PublishCycleId) {
+        cycleFilter = ' AND r.PublishCycleId = @publishCycleId';
+        sqlRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
       }
 
       const query = `
@@ -337,16 +466,22 @@ class ReportService {
             WHEN qr.NumericValue IS NOT NULL AND qr.TakeoutStatus != 'TakenOut' 
             THEN CAST(qr.NumericValue as FLOAT) 
           END) as AvgScoreAfter,
-          STRING_AGG(
-            CASE WHEN qr.TakeoutStatus = 'TakenOut' THEN qr.TakeoutReason END, 
-            '; '
-          ) as TakeoutReasons
+          STUFF((
+            SELECT '; ' + ISNULL(qr2.TakeoutReason, '')
+            FROM QuestionResponses qr2
+            WHERE qr2.QuestionId = q.QuestionId
+              AND qr2.TakeoutStatus = 'TakenOut'
+              AND ISNULL(qr2.TakeoutReason, '') <> ''
+            FOR XML PATH(''), TYPE
+          ).value('.', 'NVARCHAR(MAX)'), 1, 2, '') as TakeoutReasons
         FROM Questions q
         LEFT JOIN QuestionResponses qr ON q.QuestionId = qr.QuestionId
         LEFT JOIN Responses r ON qr.ResponseId = r.ResponseId
         WHERE q.SurveyId = @surveyId
         ${functionFilter}
+        ${cycleFilter}
         GROUP BY q.QuestionId, q.PromptText, q.Type, q.DisplayOrder
+        HAVING COUNT(CASE WHEN qr.TakeoutStatus = 'TakenOut' THEN 1 END) > 0
         ORDER BY q.DisplayOrder
       `;
 
@@ -414,7 +549,7 @@ class ReportService {
         ORDER BY bcf.CreatedAt DESC
       `;
 
-      const bestCommentsResult = await this.pool.request()
+      const bestCommentsResult = await (await this.createRequest())
         .input('departmentId', sql.UniqueIdentifier, departmentId)
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(bestCommentsQuery);
@@ -478,7 +613,7 @@ class ReportService {
         ORDER BY f.Name
       `;
 
-      const result = await this.pool.request()
+      const result = await (await this.createRequest())
         .input('departmentId', sql.UniqueIdentifier, departmentId)
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(query);
@@ -533,7 +668,7 @@ class ReportService {
         ORDER BY qr.ReviewedAt DESC
       `;
 
-      const result = await this.pool.request()
+      const result = await (await this.createRequest())
         .input('departmentId', sql.UniqueIdentifier, departmentId)
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .query(query);
@@ -564,7 +699,7 @@ class ReportService {
    */
   async getUserDepartmentId(userId) {
     try {
-      const result = await this.pool.request()
+      const result = await (await this.createRequest())
         .input('userId', sql.UniqueIdentifier, userId)
         .query(`
           SELECT DepartmentId
@@ -935,3 +1070,4 @@ class ReportService {
 }
 
 module.exports = new ReportService();
+

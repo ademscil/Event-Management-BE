@@ -8,6 +8,7 @@ const swaggerUi = require('swagger-ui-express');
 const YAML = require('yamljs');
 const sql = require('mssql');
 const db = require('./database/connection');
+const { requireAuth, requirePermission } = require('./middleware/authMiddleware');
 
 /**
  * Initialize Express application
@@ -52,6 +53,7 @@ app.use('/api/v1/auth/forgot-password', passwordResetLimiter);
 const { 
   securityHeaders, 
   contentTypeValidation, 
+  acceptHeaderValidation,
   requestSizeValidation,
   xssProtection,
   sqlInjectionProtection
@@ -60,6 +62,15 @@ const {
 app.use(securityHeaders);
 app.use(requestSizeValidation(config.upload.maxFileSizeMB * 1024 * 1024));
 
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/v1') || req.path.startsWith('/api-docs')) {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 // Body parsing middleware
 app.use(express.json({ limit: `${config.upload.maxFileSizeMB}mb` }));
 app.use(express.urlencoded({ extended: true, limit: `${config.upload.maxFileSizeMB}mb` }));
@@ -67,6 +78,7 @@ app.use(express.urlencoded({ extended: true, limit: `${config.upload.maxFileSize
 // Input sanitization and validation
 app.use(xssProtection);
 app.use(sqlInjectionProtection);
+app.use(acceptHeaderValidation);
 app.use(contentTypeValidation);
 
 // Extensionless page routes for cleaner URLs
@@ -205,10 +217,10 @@ app.use('/api/v1', apiRoutes);
 const openApiPath = path.join(__dirname, '../docs/openapi.yaml');
 if (fs.existsSync(openApiPath)) {
   const openApiSpec = YAML.load(openApiPath);
-  app.get('/api-docs/openapi.json', (req, res) => {
+  app.get('/api-docs/openapi.json', requireAuth, requirePermission('audit:read'), (req, res) => {
     res.json(openApiSpec);
   });
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+  app.use('/api-docs', requireAuth, requirePermission('audit:read'), swaggerUi.serve, swaggerUi.setup(openApiSpec, {
     explorer: true,
     customSiteTitle: 'CSI Portal API Docs',
   }));

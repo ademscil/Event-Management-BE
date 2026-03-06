@@ -2,6 +2,32 @@ const { param, query, validationResult } = require('express-validator');
 const reportService = require('../services/reportService');
 const logger = require('../config/logger');
 
+function handleReportError(error, res, fallbackMessage) {
+  const name = String(error?.name || '');
+  if (name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation error',
+      message: error.message || fallbackMessage
+    });
+  }
+  if (name === 'NotFoundError') {
+    return res.status(404).json({
+      error: 'Not found',
+      message: error.message || fallbackMessage
+    });
+  }
+  if (name === 'UnauthorizedError') {
+    return res.status(403).json({
+      error: 'Access denied',
+      message: error.message || fallbackMessage
+    });
+  }
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Generate report
  * POST /api/v1/reports/generate
@@ -10,7 +36,11 @@ const logger = require('../config/logger');
  */
 async function generateReport(req, res) {
   try {
-    const request = req.body;
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
     const report = await reportService.generateReport(request);
 
     res.json({
@@ -20,10 +50,7 @@ async function generateReport(req, res) {
 
   } catch (error) {
     logger.error('Generate report controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while generating report'
-    });
+    return handleReportError(error, res, 'An error occurred while generating report');
   }
 }
 
@@ -35,7 +62,11 @@ async function generateReport(req, res) {
  */
 async function generateBeforeTakeoutReport(req, res) {
   try {
-    const request = req.body;
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
     const report = await reportService.generateBeforeTakeoutReport(request);
 
     res.json({
@@ -45,10 +76,7 @@ async function generateBeforeTakeoutReport(req, res) {
 
   } catch (error) {
     logger.error('Generate before takeout report controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while generating report'
-    });
+    return handleReportError(error, res, 'An error occurred while generating report');
   }
 }
 
@@ -60,7 +88,11 @@ async function generateBeforeTakeoutReport(req, res) {
  */
 async function generateAfterTakeoutReport(req, res) {
   try {
-    const request = req.body;
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
     const report = await reportService.generateAfterTakeoutReport(request);
 
     res.json({
@@ -70,10 +102,7 @@ async function generateAfterTakeoutReport(req, res) {
 
   } catch (error) {
     logger.error('Generate after takeout report controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while generating report'
-    });
+    return handleReportError(error, res, 'An error occurred while generating report');
   }
 }
 
@@ -85,7 +114,10 @@ async function generateAfterTakeoutReport(req, res) {
  */
 async function getReportSelectionList(req, res) {
   try {
-    const list = await reportService.getReportSelectionList();
+    const list = await reportService.getReportSelectionList({
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    });
 
     res.json({
       success: true,
@@ -109,12 +141,12 @@ async function getReportSelectionList(req, res) {
  */
 async function getTakeoutComparisonTable(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
+    const surveyId = String(req.params.surveyId || '').trim();
     const { functionId } = req.query;
 
     const comparison = await reportService.getTakeoutComparisonTable(
       surveyId,
-      functionId ? parseInt(functionId) : null
+      functionId ? String(functionId) : null
     );
 
     res.json({
@@ -139,8 +171,8 @@ async function getTakeoutComparisonTable(req, res) {
  */
 async function getDepartmentHeadReview(req, res) {
   try {
-    const departmentId = parseInt(req.params.departmentId);
-    const surveyId = parseInt(req.params.surveyId);
+    const departmentId = String(req.params.departmentId || '').trim();
+    const surveyId = String(req.params.surveyId || '').trim();
 
     const review = await reportService.getDepartmentHeadReview(departmentId, surveyId);
 
@@ -166,8 +198,8 @@ async function getDepartmentHeadReview(req, res) {
  */
 async function getScoresByFunction(req, res) {
   try {
-    const departmentId = parseInt(req.params.departmentId);
-    const surveyId = parseInt(req.params.surveyId);
+    const departmentId = String(req.params.departmentId || '').trim();
+    const surveyId = String(req.params.surveyId || '').trim();
 
     const scores = await reportService.getScoresByFunction(departmentId, surveyId);
 
@@ -193,8 +225,8 @@ async function getScoresByFunction(req, res) {
  */
 async function getApprovedTakeouts(req, res) {
   try {
-    const departmentId = parseInt(req.params.departmentId);
-    const surveyId = parseInt(req.params.surveyId);
+    const departmentId = String(req.params.departmentId || '').trim();
+    const surveyId = String(req.params.surveyId || '').trim();
 
     const takeouts = await reportService.getApprovedTakeouts(departmentId, surveyId);
 
@@ -220,7 +252,11 @@ async function getApprovedTakeouts(req, res) {
  */
 async function exportToExcel(req, res) {
   try {
-    const request = req.body;
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
     const buffer = await reportService.exportToExcel(request);
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -229,10 +265,7 @@ async function exportToExcel(req, res) {
 
   } catch (error) {
     logger.error('Export to Excel controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while exporting to Excel'
-    });
+    return handleReportError(error, res, 'An error occurred while exporting to Excel');
   }
 }
 
@@ -244,7 +277,11 @@ async function exportToExcel(req, res) {
  */
 async function exportToPdf(req, res) {
   try {
-    const request = req.body;
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
     const buffer = await reportService.exportToPdf(request);
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -253,10 +290,7 @@ async function exportToPdf(req, res) {
 
   } catch (error) {
     logger.error('Export to PDF controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while exporting to PDF'
-    });
+    return handleReportError(error, res, 'An error occurred while exporting to PDF');
   }
 }
 

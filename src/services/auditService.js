@@ -323,6 +323,8 @@ class AuditService {
      * @param {Date} filter.endDate - End date for filtering
      * @param {string} filter.userId - Filter by user ID
      * @param {string} filter.username - Filter by username
+     * @param {string} filter.keyword - Keyword for searchBy filter
+     * @param {string} filter.searchBy - username | entityId | ipAddress | userAgent
      * @param {string} filter.action - Filter by action type
      * @param {string} filter.entityType - Filter by entity type
      * @param {string} filter.entityId - Filter by entity ID
@@ -359,6 +361,25 @@ class AuditService {
             if (filter.username) {
                 whereConditions.push('Username LIKE @username');
                 request.input('username', sql.NVarChar(50), `%${filter.username}%`);
+            }
+
+            if (filter.keyword && filter.searchBy) {
+                const normalizedSearchBy = String(filter.searchBy).trim();
+                const normalizedKeyword = `%${String(filter.keyword).trim()}%`;
+
+                if (normalizedSearchBy === 'username') {
+                    whereConditions.push('Username LIKE @searchKeyword');
+                    request.input('searchKeyword', sql.NVarChar(100), normalizedKeyword);
+                } else if (normalizedSearchBy === 'entityId') {
+                    whereConditions.push('CONVERT(NVARCHAR(100), EntityId) LIKE @searchKeyword');
+                    request.input('searchKeyword', sql.NVarChar(100), normalizedKeyword);
+                } else if (normalizedSearchBy === 'ipAddress') {
+                    whereConditions.push('IPAddress LIKE @searchKeyword');
+                    request.input('searchKeyword', sql.NVarChar(100), normalizedKeyword);
+                } else if (normalizedSearchBy === 'userAgent') {
+                    whereConditions.push('UserAgent LIKE @searchKeyword');
+                    request.input('searchKeyword', sql.NVarChar(255), normalizedKeyword);
+                }
             }
 
             if (filter.action) {
