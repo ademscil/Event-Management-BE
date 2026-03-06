@@ -2,6 +2,7 @@ const sql = require('mssql');
 const { randomUUID } = require('crypto');
 const pool = require('../database/connection');
 const logger = require('../config/logger');
+const publishCycleService = require('./publishCycleService');
 
 /**
  * Custom error classes
@@ -599,6 +600,7 @@ class ResponseService {
 
       await transaction.begin();
       const hasQuestionResponseApplicationId = await this.hasQuestionResponseApplicationIdColumn();
+      const publishCycle = await publishCycleService.ensureCurrentCycle(transaction, request.surveyId);
 
       // Create responses for each selected application
       const responseIds = [];
@@ -607,7 +609,7 @@ class ResponseService {
         const resolvedOrg = await this.resolveRespondentOrg(request.respondent, applicationId);
 
         // Insert main response record
-        const responseResult = await transaction.request()
+        const responseInsertRequest = transaction.request()
           .input('responseId', sql.UniqueIdentifier, randomUUID())
           .input('surveyId', sql.UniqueIdentifier, request.surveyId)
           .input('respondentName', sql.NVarChar(200), request.respondent.name)
@@ -617,8 +619,27 @@ class ResponseService {
           .input('departmentId', sql.UniqueIdentifier, resolvedOrg.departmentId)
           .input('applicationId', sql.UniqueIdentifier, applicationId)
           .input('submittedAt', sql.DateTime, new Date())
-          .input('ipAddress', sql.NVarChar(50), ipAddress)
-          .query(`
+          .input('ipAddress', sql.NVarChar(50), ipAddress);
+
+        let responseResult;
+        if (publishCycle?.PublishCycleId) {
+          responseResult = await responseInsertRequest
+            .input('publishCycleId', sql.UniqueIdentifier, publishCycle.PublishCycleId)
+            .query(`
+              INSERT INTO Responses (
+                ResponseId, SurveyId, PublishCycleId, RespondentName, RespondentEmail,
+                BusinessUnitId, DivisionId, DepartmentId, ApplicationId,
+                SubmittedAt, IpAddress
+              )
+              OUTPUT INSERTED.ResponseId
+              VALUES (
+                @responseId, @surveyId, @publishCycleId, @respondentName, @respondentEmail,
+                @businessUnitId, @divisionId, @departmentId, @applicationId,
+                @submittedAt, @ipAddress
+              )
+            `);
+        } else {
+          responseResult = await responseInsertRequest.query(`
             INSERT INTO Responses (
               ResponseId, SurveyId, RespondentName, RespondentEmail,
               BusinessUnitId, DivisionId, DepartmentId, ApplicationId,
@@ -631,6 +652,7 @@ class ResponseService {
               @submittedAt, @ipAddress
             )
           `);
+        }
 
         const responseId = responseResult.recordset[0].ResponseId;
         responseIds.push(responseId);
@@ -752,17 +774,29 @@ class ResponseService {
         throw new ValidationError('Application ID is required');
       }
 
-      const result = await (await this.createRequest())
+      const dbPool = this.pool && typeof this.pool.getPool === 'function'
+        ? await this.pool.getPool()
+        : this.pool;
+      const publishCycle = await publishCycleService.ensureCurrentCycle(dbPool, surveyId);
+      const request = await this.createRequest();
+      request
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .input('email', sql.NVarChar(200), email.toLowerCase().trim())
-        .input('applicationId', sql.UniqueIdentifier, applicationId)
-        .query(`
+        .input('applicationId', sql.UniqueIdentifier, applicationId);
+
+      let query = `
           SELECT COUNT(*) as Count
           FROM Responses
           WHERE SurveyId = @surveyId
             AND LOWER(LTRIM(RTRIM(RespondentEmail))) = @email
             AND ApplicationId = @applicationId
-        `);
+        `;
+      if (publishCycle?.PublishCycleId) {
+        query += ' AND PublishCycleId = @publishCycleId';
+        request.input('publishCycleId', sql.UniqueIdentifier, publishCycle.PublishCycleId);
+      }
+
+      const result = await request.query(query);
 
       const isDuplicate = result.recordset[0].Count > 0;
 

@@ -2,6 +2,70 @@ const { body, validationResult } = require('express-validator');
 const authService = require('../services/authService');
 const logger = require('../config/logger');
 
+const ACCESS_COOKIE_NAME = 'csi_access_token';
+const REFRESH_COOKIE_NAME = 'csi_refresh_token';
+
+function getCookieValue(req, name) {
+  const cookieHeader = req.headers.cookie;
+  if (!cookieHeader) return null;
+
+  const cookies = cookieHeader.split(';');
+  for (const cookie of cookies) {
+    const [key, ...rest] = cookie.trim().split('=');
+    if (key === name) {
+      return decodeURIComponent(rest.join('='));
+    }
+  }
+
+  return null;
+}
+
+function parseDurationToMs(value, fallbackMs) {
+  if (!value || typeof value !== 'string') return fallbackMs;
+
+  const match = value.trim().match(/^(\d+)([smhd])$/i);
+  if (!match) return fallbackMs;
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000
+  }[unit];
+
+  return amount * multiplier;
+}
+
+function getCookieOptions(maxAge) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction,
+    path: '/',
+    maxAge
+  };
+}
+
+function setAuthCookies(res, accessToken, refreshToken) {
+  res.cookie(ACCESS_COOKIE_NAME, accessToken, getCookieOptions(parseDurationToMs(process.env.JWT_EXPIRATION || '8h', 8 * 60 * 60 * 1000)));
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, getCookieOptions(parseDurationToMs(process.env.JWT_REFRESH_EXPIRATION || '7d', 7 * 24 * 60 * 60 * 1000)));
+}
+
+function clearAuthCookies(res) {
+  const baseOptions = {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/'
+  };
+
+  res.clearCookie(ACCESS_COOKIE_NAME, baseOptions);
+  res.clearCookie(REFRESH_COOKIE_NAME, baseOptions);
+}
+
 /**
  * Validation rules for login
  */
@@ -19,7 +83,11 @@ const loginValidation = [
  */
 const refreshValidation = [
   body('refreshToken')
-    .notEmpty().withMessage('Refresh token is required')
+    .custom((value, { req }) => {
+      if (value) return true;
+      if (getCookieValue(req, REFRESH_COOKIE_NAME)) return true;
+      throw new Error('Refresh token is required');
+    })
 ];
 
 /**
@@ -54,10 +122,9 @@ async function login(req, res) {
     }
 
     // Return success response
+    setAuthCookies(res, result.token, result.refreshToken);
     res.json({
       success: true,
-      token: result.token,
-      refreshToken: result.refreshToken,
       user: {
         userId: result.user.userId,
         username: result.user.username,
@@ -88,6 +155,7 @@ async function logout(req, res) {
     const token = req.token;
 
     if (!token) {
+      clearAuthCookies(res);
       return res.status(400).json({
         error: 'Bad request',
         message: 'No token provided'
@@ -104,6 +172,7 @@ async function logout(req, res) {
       });
     }
 
+    clearAuthCookies(res);
     res.json({
       success: true,
       message: 'Logged out successfully'
@@ -111,6 +180,7 @@ async function logout(req, res) {
 
   } catch (error) {
     logger.error('Logout controller error:', error);
+    clearAuthCookies(res);
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred during logout'
@@ -165,7 +235,7 @@ async function refresh(req, res) {
       });
     }
 
-    const { refreshToken } = req.body;
+    const refreshToken = req.body.refreshToken || getCookieValue(req, REFRESH_COOKIE_NAME);
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.get('user-agent');
 
@@ -180,10 +250,9 @@ async function refresh(req, res) {
     }
 
     // Return success response
+    setAuthCookies(res, result.token, result.refreshToken);
     res.json({
       success: true,
-      token: result.token,
-      refreshToken: result.refreshToken,
       user: {
         userId: result.user.userId,
         username: result.user.username,

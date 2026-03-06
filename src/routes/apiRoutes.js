@@ -1,5 +1,6 @@
 ﻿const express = require('express');
 const multer = require('multer');
+const config = require('../config');
 const {
   requireAuth,
   requirePermission
@@ -22,7 +23,32 @@ const auditController = require('../controllers/auditController');
 const integrationController = require('../controllers/integrationController');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+const maxUploadSizeBytes = (config.upload.maxFileSizeMB || 10) * 1024 * 1024;
+
+function createUploadMiddleware(allowedMimeTypes) {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: maxUploadSizeBytes,
+      files: 1
+    },
+    fileFilter: (req, file, cb) => {
+      if (!allowedMimeTypes.includes(file.mimetype)) {
+        const error = new Error(`Invalid file type: ${file.mimetype}`);
+        error.statusCode = 400;
+        return cb(error);
+      }
+
+      cb(null, true);
+    }
+  });
+}
+
+const spreadsheetUpload = createUploadMiddleware([
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-excel',
+  'text/csv'
+]);
 
 // Public master data endpoints for respondent form
 router.get('/public/business-units', businessUnitController.getBusinessUnits);
@@ -34,7 +60,7 @@ router.get('/public/functions', functionController.getFunctions);
 router.get('/users', requireAuth, requirePermission('users:read'), userController.getUsers);
 router.get('/users/template', requireAuth, requirePermission('users:read'), userController.downloadUserTemplate);
 router.get('/users/download', requireAuth, requirePermission('users:read'), userController.downloadUserList);
-router.post('/users/upload', requireAuth, requirePermission('users:create'), upload.single('file'), userController.uploadUserFile);
+router.post('/users/upload', requireAuth, requirePermission('users:create'), spreadsheetUpload.single('file'), userController.uploadUserFile);
 router.get('/users/:id', requireAuth, requirePermission('users:read'), userController.getUserById);
 router.post('/users', requireAuth, requirePermission('users:create'), userController.createUserValidation, userController.createUser);
 router.put('/users/:id', requireAuth, requirePermission('users:update'), userController.updateUserValidation, userController.updateUser);
@@ -87,7 +113,7 @@ router.delete('/mappings/application-department/:id', requireAuth, requirePermis
 router.get('/mappings/application-department/department/:departmentId', requireAuth, requirePermission('mappings:read'), mappingController.getApplicationsByDepartment);
 router.get('/mappings/application-department/application/:applicationId', requireAuth, requirePermission('mappings:read'), mappingController.getDepartmentsByApplication);
 router.get('/mappings/application-department/export/csv', requireAuth, requirePermission('mappings:read'), mappingController.exportAppDeptMappingsToCSV);
-router.post('/mappings/bulk-import', requireAuth, requirePermission('mappings:create'), upload.single('file'), mappingController.bulkImportMappings);
+router.post('/mappings/bulk-import', requireAuth, requirePermission('mappings:create'), spreadsheetUpload.single('file'), mappingController.bulkImportMappings);
 
 // Backward-compatible mapping aliases used by current frontend
 router.get('/mappings/function-app/details', requireAuth, requirePermission('mappings:read'), (req, res, next) => {

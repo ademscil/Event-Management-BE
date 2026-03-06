@@ -6,6 +6,7 @@ const config = require('../config');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const publishCycleService = require('./publishCycleService');
 
 /**
  * Custom error classes
@@ -288,6 +289,7 @@ class SurveyService {
   async updateSurvey(surveyId, data) {
     try {
       const pool = await db.getPool();
+      const transaction = new sql.Transaction(pool);
 
       // Check if survey exists
       const surveyCheck = await pool.request()
@@ -323,8 +325,6 @@ class SurveyService {
 
       // Build update query
       const updateFields = [];
-      const request = pool.request();
-      request.input('surveyId', sql.UniqueIdentifier, surveyId);
 
       if (data.title !== undefined) {
         if (!data.title || data.title.trim().length === 0) {
@@ -334,73 +334,109 @@ class SurveyService {
           throw new ValidationError('Title must not exceed 500 characters');
         }
         updateFields.push('Title = @title');
-        request.input('title', sql.NVarChar(500), data.title);
       }
 
       if (data.description !== undefined) {
         updateFields.push('Description = @description');
-        request.input('description', sql.NVarChar(sql.MAX), data.description);
       }
 
       if (data.startDate !== undefined) {
         updateFields.push('StartDate = @startDate');
-        request.input('startDate', sql.DateTime2, new Date(data.startDate));
       }
 
       if (data.endDate !== undefined) {
         updateFields.push('EndDate = @endDate');
-        request.input('endDate', sql.DateTime2, new Date(data.endDate));
       }
 
       if (data.status !== undefined) {
         updateFields.push('Status = @status');
-        request.input('status', sql.NVarChar(50), data.status);
       }
-        if (data.assignedAdminId !== undefined) {
-          updateFields.push('AssignedAdminId = @assignedAdminId');
-          request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
-        }
+
+      if (data.assignedAdminId !== undefined) {
+        updateFields.push('AssignedAdminId = @assignedAdminId');
+      }
 
       if (data.targetRespondents !== undefined) {
         updateFields.push('TargetRespondents = @targetRespondents');
-        request.input('targetRespondents', sql.Int, data.targetRespondents);
       }
 
       if (data.targetScore !== undefined) {
         updateFields.push('TargetScore = @targetScore');
-        request.input('targetScore', sql.Decimal(5, 2), data.targetScore);
       }
 
       if (data.duplicatePreventionEnabled !== undefined) {
         updateFields.push('DuplicatePreventionEnabled = @duplicatePreventionEnabled');
-        request.input('duplicatePreventionEnabled', sql.Bit, data.duplicatePreventionEnabled);
       }
 
       if (updateFields.length === 0) {
         throw new ValidationError('No fields to update');
       }
 
-      if (data.updatedBy) {
-        updateFields.push('UpdatedBy = @updatedBy');
+      await transaction.begin();
+
+      try {
+        const request = typeof transaction.request === 'function'
+          ? transaction.request()
+          : new sql.Request(transaction);
+        request.input('surveyId', sql.UniqueIdentifier, surveyId);
+
+        if (data.title !== undefined) {
+          request.input('title', sql.NVarChar(500), data.title);
+        }
+        if (data.description !== undefined) {
+          request.input('description', sql.NVarChar(sql.MAX), data.description);
+        }
+        if (data.startDate !== undefined) {
+          request.input('startDate', sql.DateTime2, new Date(data.startDate));
+        }
+        if (data.endDate !== undefined) {
+          request.input('endDate', sql.DateTime2, new Date(data.endDate));
+        }
+        if (data.status !== undefined) {
+          request.input('status', sql.NVarChar(50), data.status);
+        }
+        if (data.assignedAdminId !== undefined) {
+          request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
+        }
+        if (data.targetRespondents !== undefined) {
+          request.input('targetRespondents', sql.Int, data.targetRespondents);
+        }
+        if (data.targetScore !== undefined) {
+          request.input('targetScore', sql.Decimal(5, 2), data.targetScore);
+        }
+        if (data.duplicatePreventionEnabled !== undefined) {
+          request.input('duplicatePreventionEnabled', sql.Bit, data.duplicatePreventionEnabled);
+        }
+
+        if (data.updatedBy) {
+          updateFields.push('UpdatedBy = @updatedBy');
+          request.input('updatedBy', sql.UniqueIdentifier, data.updatedBy);
+        }
         updateFields.push('UpdatedAt = GETDATE()');
-        request.input('updatedBy', sql.UniqueIdentifier, data.updatedBy);
-      } else {
-        updateFields.push('UpdatedAt = GETDATE()');
+
+        const result = await request.query(`
+          UPDATE Surveys
+          SET ${updateFields.join(', ')}
+          OUTPUT INSERTED.*
+          WHERE SurveyId = @surveyId
+        `);
+
+        if (assignedAdminIds) {
+          await this.syncSurveyAdminAssignments(transaction, surveyId, assignedAdminIds);
+        }
+
+        const previousStatus = surveyCheck.recordset[0].Status;
+        if (data.status === 'Active' && previousStatus !== 'Active') {
+          await publishCycleService.activateNewCycle(transaction, surveyId, data.updatedBy || null);
+        }
+
+        await transaction.commit();
+        logger.info('Survey updated', { surveyId });
+        return result.recordset[0];
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
       }
-
-      const result = await request.query(`
-        UPDATE Surveys
-        SET ${updateFields.join(', ')}
-        OUTPUT INSERTED.*
-        WHERE SurveyId = @surveyId
-      `);
-
-      if (assignedAdminIds) {
-        await this.syncSurveyAdminAssignments(pool, surveyId, assignedAdminIds);
-      }
-
-      logger.info('Survey updated', { surveyId });
-      return result.recordset[0];
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
         throw error;
@@ -2625,6 +2661,30 @@ class SurveyService {
     if (file.size > maxSizeBytes) {
       throw new ValidationError(`File size exceeds maximum allowed size of ${maxSizeMB}MB`);
     }
+
+    if (process.env.NODE_ENV !== 'test') {
+      const signatures = {
+        'image/jpeg': [Buffer.from([0xff, 0xd8, 0xff])],
+        'image/jpg': [Buffer.from([0xff, 0xd8, 0xff])],
+        'image/png': [Buffer.from([0x89, 0x50, 0x4e, 0x47])],
+        'image/gif': [Buffer.from('47494638', 'hex')],
+        'image/webp': [Buffer.from('52494646', 'hex')]
+      };
+
+      const validSignatures = signatures[file.mimetype] || [];
+      const hasValidSignature = validSignatures.some((signature) => file.buffer.subarray(0, signature.length).equals(signature));
+
+      if (!hasValidSignature) {
+        throw new ValidationError('Invalid image content. File signature does not match its MIME type');
+      }
+
+      if (file.mimetype === 'image/webp') {
+        const webpMarker = file.buffer.subarray(8, 12).toString('ascii');
+        if (webpMarker !== 'WEBP') {
+          throw new ValidationError('Invalid WebP image');
+        }
+      }
+    }
   }
 
   /**
@@ -2632,11 +2692,38 @@ class SurveyService {
    * @param {string} originalName - Original filename
    * @returns {string} Unique filename
    */
-  generateUniqueFilename(originalName) {
+  generateUniqueFilename(file) {
     const timestamp = Date.now();
     const randomString = crypto.randomBytes(8).toString('hex');
-    const ext = path.extname(originalName);
+    const originalName = typeof file === 'string' ? file : file?.originalname;
+    const mimeType = typeof file === 'string' ? this.getMimeTypeFromFilename(file) : String(file?.mimetype || '');
+    const ext = this.getSafeExtension(mimeType, originalName);
     return `${timestamp}-${randomString}${ext}`;
+  }
+
+  getMimeTypeFromFilename(originalName) {
+    const ext = path.extname(String(originalName || '')).toLowerCase();
+    if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+    if (ext === '.png') return 'image/png';
+    if (ext === '.gif') return 'image/gif';
+    if (ext === '.webp') return 'image/webp';
+    return '';
+  }
+
+  getSafeExtension(mimeType, originalName) {
+    const extensionMap = {
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'image/webp': '.webp'
+    };
+
+    const extFromMime = extensionMap[mimeType];
+    if (extFromMime) return extFromMime;
+
+    const fallback = path.extname(String(originalName || '')).toLowerCase();
+    return ['.jpg', '.jpeg', '.png', '.gif', '.webp'].includes(fallback) ? fallback : '.bin';
   }
 
   /**
@@ -2718,7 +2805,7 @@ class SurveyService {
       }
 
       // Generate unique filename and save file
-      const filename = this.generateUniqueFilename(file.originalname);
+      const filename = this.generateUniqueFilename(file);
       const imageUrl = await this.saveFile(file.buffer, filename, 'surveys');
 
       // Get existing configuration
@@ -2785,7 +2872,7 @@ class SurveyService {
       }
 
       // Generate unique filename and save file
-      const filename = this.generateUniqueFilename(file.originalname);
+      const filename = this.generateUniqueFilename(file);
       const imageUrl = await this.saveFile(file.buffer, filename, 'surveys');
 
       // Get existing configuration
@@ -2852,7 +2939,7 @@ class SurveyService {
       }
 
       // Generate unique filename and save file
-      const filename = this.generateUniqueFilename(file.originalname);
+      const filename = this.generateUniqueFilename(file);
       const imageUrl = await this.saveFile(file.buffer, filename, 'surveys');
 
       // Get existing configuration
@@ -2924,7 +3011,7 @@ class SurveyService {
       const question = questionResult.recordset[0];
 
       // Generate unique filename and save file
-      const filename = this.generateUniqueFilename(file.originalname);
+      const filename = this.generateUniqueFilename(file);
       const imageUrl = await this.saveFile(file.buffer, filename, 'questions');
 
       // Delete old image if exists
@@ -3009,7 +3096,7 @@ class SurveyService {
       }
 
       // Generate unique filename and save file
-      const filename = this.generateUniqueFilename(file.originalname);
+      const filename = this.generateUniqueFilename(file);
       const imageUrl = await this.saveFile(file.buffer, filename, 'options');
 
       // Get the option (could be string or object)

@@ -99,6 +99,10 @@ function getStatusCode(error) {
     return 409;
   }
 
+  if (error.name === 'MulterError') {
+    return 400;
+  }
+
   // SQL Server errors
   if (error.code === 'EREQUEST' || error.code === 'ECONNREFUSED') {
     return 503;

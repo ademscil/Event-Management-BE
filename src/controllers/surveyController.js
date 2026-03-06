@@ -4,10 +4,20 @@ const logger = require('../config/logger');
 const multer = require('multer');
 
 // Configure multer for file uploads
+const allowedImageMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (!allowedImageMimeTypes.includes(file.mimetype)) {
+      const error = new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed');
+      error.statusCode = 400;
+      return cb(error);
+    }
+    cb(null, true);
   }
 });
 
