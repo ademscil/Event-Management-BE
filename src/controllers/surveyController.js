@@ -123,6 +123,13 @@ async function createSurvey(req, res) {
 
   } catch (error) {
     logger.error('Create survey controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while creating survey'
@@ -158,6 +165,13 @@ async function getSurveys(req, res) {
 
   } catch (error) {
     logger.error('Get surveys controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while fetching surveys'
@@ -190,6 +204,13 @@ async function getSurveyById(req, res) {
 
   } catch (error) {
     logger.error('Get survey by ID controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while fetching survey'
@@ -214,7 +235,10 @@ async function updateSurvey(req, res) {
     }
 
     const surveyId = req.params.id;
-    const updates = req.body;
+    const updates = {
+      ...req.body,
+      updatedBy: req.user?.userId,
+    };
 
     const result = await surveyService.updateSurvey(surveyId, updates);
 
@@ -226,6 +250,14 @@ async function updateSurvey(req, res) {
 
   } catch (error) {
     logger.error('Update survey controller error:', error);
+
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while updating survey'
@@ -258,6 +290,14 @@ async function deleteSurvey(req, res) {
 
   } catch (error) {
     logger.error('Delete survey controller error:', error);
+
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while deleting survey'
@@ -286,6 +326,14 @@ async function updateSurveyConfig(req, res) {
 
   } catch (error) {
     logger.error('Update survey config controller error:', error);
+
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while updating configuration'
@@ -318,6 +366,14 @@ async function generatePreview(req, res) {
 
   } catch (error) {
     logger.error('Generate preview controller error:', error);
+
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
+
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while generating preview'
@@ -346,6 +402,12 @@ async function generateSurveyLink(req, res) {
 
   } catch (error) {
     logger.error('Generate survey link controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while generating link'
@@ -371,6 +433,12 @@ async function generateQRCode(req, res) {
 
   } catch (error) {
     logger.error('Generate QR code controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while generating QR code'
@@ -396,6 +464,12 @@ async function generateEmbedCode(req, res) {
 
   } catch (error) {
     logger.error('Generate embed code controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while generating embed code'
@@ -428,6 +502,12 @@ async function scheduleBlast(req, res) {
 
   } catch (error) {
     logger.error('Schedule blast controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while scheduling blast'
@@ -460,6 +540,12 @@ async function scheduleReminder(req, res) {
 
   } catch (error) {
     logger.error('Schedule reminder controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while scheduling reminder'
@@ -479,7 +565,7 @@ async function getScheduledOperations(req, res) {
     const { type, status } = req.query;
 
     const filter = {};
-    if (type) filter.type = type;
+    if (type) filter.operationType = type;
     if (status) filter.status = status;
 
     const operations = await surveyService.getScheduledOperations(surveyId, filter);
@@ -491,6 +577,12 @@ async function getScheduledOperations(req, res) {
 
   } catch (error) {
     logger.error('Get scheduled operations controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while fetching scheduled operations'
@@ -517,6 +609,12 @@ async function cancelScheduledOperation(req, res) {
 
   } catch (error) {
     logger.error('Cancel scheduled operation controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message,
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while cancelling operation'

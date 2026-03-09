@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const multer = require('multer');
 const config = require('../config');
+const validators = require('../middleware/validators');
 const {
   requireAuth,
   requirePermission
@@ -140,8 +141,8 @@ router.get('/surveys/:id/preview', requireAuth, requirePermission('surveys:read'
 router.post('/surveys/:id/link', requireAuth, requirePermission('surveys:read'), surveyController.generateSurveyLink);
 router.post('/surveys/:id/qrcode', requireAuth, requirePermission('surveys:read'), surveyController.generateQRCode);
 router.post('/surveys/:id/embed', requireAuth, requirePermission('surveys:read'), surveyController.generateEmbedCode);
-router.post('/surveys/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), surveyController.scheduleBlast);
-router.post('/surveys/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), surveyController.scheduleReminder);
+router.post('/surveys/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleBlast);
+router.post('/surveys/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleReminder);
 router.get('/surveys/:id/scheduled-operations', requireAuth, requirePermission('surveys:read'), surveyController.getScheduledOperations);
 router.delete('/surveys/scheduled-operations/:operationId', requireAuth, requirePermission('surveys:update'), surveyController.cancelScheduledOperation);
 router.post('/surveys/:id/upload/hero', requireAuth, requirePermission('surveys:update'), surveyController.upload.single('image'), surveyController.uploadHeroImage);
@@ -159,8 +160,8 @@ router.get('/events/:id/preview', requireAuth, requirePermission('surveys:read')
 router.post('/events/:id/link', requireAuth, requirePermission('surveys:read'), surveyController.generateSurveyLink);
 router.post('/events/:id/qrcode', requireAuth, requirePermission('surveys:read'), surveyController.generateQRCode);
 router.post('/events/:id/embed', requireAuth, requirePermission('surveys:read'), surveyController.generateEmbedCode);
-router.post('/events/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), surveyController.scheduleBlast);
-router.post('/events/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), surveyController.scheduleReminder);
+router.post('/events/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleBlast);
+router.post('/events/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleReminder);
 router.get('/events/:id/scheduled-operations', requireAuth, requirePermission('surveys:read'), surveyController.getScheduledOperations);
 
 router.get('/questions/survey/:surveyId', requireAuth, requirePermission('surveys:read'), questionController.getQuestionsBySurvey);
@@ -199,6 +200,9 @@ router.post('/reports/statistics', requireAuth, requirePermission('reports:read'
 router.post('/approvals/propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.proposeTakeoutForQuestion);
 router.post('/approvals/bulk-propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.bulkProposeTakeout);
 router.delete('/approvals/propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.cancelProposedTakeout);
+router.post('/approvals/respondents/approve', requireAuth, requirePermission('responses:approve-initial'), approvalController.approveInitialResponses);
+router.post('/approvals/respondents/reject', requireAuth, requirePermission('responses:reject-initial'), approvalController.rejectInitialResponses);
+router.post('/approvals/respondents/final-approve', requireAuth, requirePermission('responses:approve-final'), approvalController.approveFinalResponses);
 router.post('/approvals/approve', requireAuth, requirePermission('approvals:approve'), approvalController.approveProposedTakeout);
 router.post('/approvals/reject', requireAuth, requirePermission('approvals:reject'), approvalController.rejectProposedTakeout);
 router.get('/approvals/pending', requireAuth, requirePermission('approvals:read'), approvalController.getPendingApprovals);

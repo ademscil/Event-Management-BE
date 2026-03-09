@@ -34,6 +34,7 @@ const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 3000,
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+  publicSurveyBaseUrl: process.env.PUBLIC_SURVEY_BASE_URL || process.env.BASE_URL || 'http://localhost:3000',
 
   // Database Configuration
   database: {
@@ -125,6 +126,13 @@ const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     file: process.env.LOG_FILE || 'logs/app.log'
+  },
+
+  // Development startup retry
+  startup: {
+    dbRetryEnabled: process.env.DB_RETRY_ENABLED !== 'false',
+    dbRetryIntervalMs: parseInt(process.env.DB_RETRY_INTERVAL_MS, 10) || 5000,
+    dbRetryMaxAttempts: parseInt(process.env.DB_RETRY_MAX_ATTEMPTS, 10) || 0
   }
 };
 
