@@ -80,6 +80,56 @@ class SurveyService {
     }
   }
 
+  normalizeDateValue(value, fieldName) {
+    if (value === undefined) {
+      return undefined;
+    }
+
+    if (value === null || value === '') {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) {
+      throw new ValidationError(`Invalid ${fieldName}`);
+    }
+
+    return parsed;
+  }
+
+  validatePublishWindow(status, startDate, endDate) {
+    if (status !== 'Active') {
+      return;
+    }
+
+    if (!startDate || !endDate) {
+      throw new ValidationError('Start date and end date are required before publish');
+    }
+
+    const now = new Date();
+    if (endDate <= now) {
+      throw new ValidationError('Survey tidak bisa dipublish karena periode sudah berakhir');
+    }
+  }
+
+  resolveUpdatedSchedule(existingSurvey, data) {
+    const nextStartDate = data.startDate !== undefined
+      ? this.normalizeDateValue(data.startDate, 'start date')
+      : (existingSurvey.StartDate ? new Date(existingSurvey.StartDate) : null);
+    const nextEndDate = data.endDate !== undefined
+      ? this.normalizeDateValue(data.endDate, 'end date')
+      : (existingSurvey.EndDate ? new Date(existingSurvey.EndDate) : null);
+    const nextStatus = data.status !== undefined ? data.status : existingSurvey.Status;
+
+    if (nextStartDate && nextEndDate) {
+      this.validateDates(nextStartDate, nextEndDate);
+    }
+
+    this.validatePublishWindow(nextStatus, nextStartDate, nextEndDate);
+
+    return { nextStartDate, nextEndDate, nextStatus };
+  }
+
   /**
    * Normalize assigned admin IDs from legacy and new payload fields.
    * @param {Object} data - Request payload
@@ -209,17 +259,38 @@ class SurveyService {
         .input('duplicatePreventionEnabled', sql.Bit, data.duplicatePreventionEnabled !== false)
         .input('createdBy', sql.UniqueIdentifier, data.createdBy)
         .query(`
-          INSERT INTO Surveys (
-            Title, Description, StartDate, EndDate, Status,
-            AssignedAdminId, TargetRespondents, TargetScore,
-            DuplicatePreventionEnabled, CreatedBy, CreatedAt
-          )
-          OUTPUT INSERTED.*
-          VALUES (
-            @title, @description, @startDate, @endDate, @status,
-            @assignedAdminId, @targetRespondents, @targetScore,
-            @duplicatePreventionEnabled, @createdBy, GETDATE()
-          )
+          IF (
+            (OBJECT_ID(N'dbo.Events', N'U') IS NOT NULL AND COL_LENGTH('dbo.Events', 'EventTypeId') IS NOT NULL)
+            OR (OBJECT_ID(N'dbo.Surveys', N'U') IS NOT NULL AND COL_LENGTH('dbo.Surveys', 'EventTypeId') IS NOT NULL)
+          ) AND OBJECT_ID(N'dbo.EventTypes', N'U') IS NOT NULL
+          BEGIN
+            INSERT INTO Surveys (
+              Title, Description, StartDate, EndDate, Status,
+              AssignedAdminId, TargetRespondents, TargetScore,
+              DuplicatePreventionEnabled, CreatedBy, CreatedAt, EventTypeId
+            )
+            OUTPUT INSERTED.*
+            VALUES (
+              @title, @description, @startDate, @endDate, @status,
+              @assignedAdminId, @targetRespondents, @targetScore,
+              @duplicatePreventionEnabled, @createdBy, GETDATE(),
+              (SELECT TOP 1 EventTypeId FROM EventTypes WHERE Code = 'SURVEY' AND IsActive = 1)
+            )
+          END
+          ELSE
+          BEGIN
+            INSERT INTO Surveys (
+              Title, Description, StartDate, EndDate, Status,
+              AssignedAdminId, TargetRespondents, TargetScore,
+              DuplicatePreventionEnabled, CreatedBy, CreatedAt
+            )
+            OUTPUT INSERTED.*
+            VALUES (
+              @title, @description, @startDate, @endDate, @status,
+              @assignedAdminId, @targetRespondents, @targetScore,
+              @duplicatePreventionEnabled, @createdBy, GETDATE()
+            )
+          END
         `);
 
       const survey = surveyResult.recordset[0];
@@ -294,21 +365,20 @@ class SurveyService {
       // Check if survey exists
       const surveyCheck = await pool.request()
         .input('surveyId', sql.UniqueIdentifier, surveyId)
-        .query('SELECT SurveyId, Status FROM Surveys WHERE SurveyId = @surveyId');
+        .query('SELECT SurveyId, Status, StartDate, EndDate FROM Surveys WHERE SurveyId = @surveyId');
 
       if (surveyCheck.recordset.length === 0) {
         throw new NotFoundError('Survey not found');
-      }
-
-      // Validate dates if both are provided
-      if (data.startDate && data.endDate) {
-        this.validateDates(data.startDate, data.endDate);
       }
 
       // Validate status if provided
       if (data.status) {
         this.validateStatus(data.status);
       }
+      const { nextStartDate, nextEndDate, nextStatus } = this.resolveUpdatedSchedule(
+        surveyCheck.recordset[0],
+        data,
+      );
       const hasAssignmentPayload = data.assignedAdminIds !== undefined || data.assignedAdminId !== undefined;
       const assignedAdminIds = hasAssignmentPayload
         ? this.normalizeAssignedAdminIds(data)
@@ -387,13 +457,13 @@ class SurveyService {
           request.input('description', sql.NVarChar(sql.MAX), data.description);
         }
         if (data.startDate !== undefined) {
-          request.input('startDate', sql.DateTime2, new Date(data.startDate));
+          request.input('startDate', sql.DateTime2, nextStartDate);
         }
         if (data.endDate !== undefined) {
-          request.input('endDate', sql.DateTime2, new Date(data.endDate));
+          request.input('endDate', sql.DateTime2, nextEndDate);
         }
         if (data.status !== undefined) {
-          request.input('status', sql.NVarChar(50), data.status);
+          request.input('status', sql.NVarChar(50), nextStatus);
         }
         if (data.assignedAdminId !== undefined) {
           request.input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId);
@@ -426,7 +496,7 @@ class SurveyService {
         }
 
         const previousStatus = surveyCheck.recordset[0].Status;
-        if (data.status === 'Active' && previousStatus !== 'Active') {
+        if (nextStatus === 'Active' && previousStatus !== 'Active') {
           await publishCycleService.activateNewCycle(transaction, surveyId, data.updatedBy || null);
         }
 
@@ -511,6 +581,10 @@ class SurveyService {
       let query = `
         SELECT 
           s.*,
+          CASE
+            WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+            ELSE s.Status
+          END AS EffectiveStatus,
           COALESCE(NULLIF(STUFF((
             SELECT ', ' + u2.DisplayName
             FROM SurveyAdminAssignments saa2
@@ -576,7 +650,7 @@ class SurveyService {
           Description: row.Description,
           StartDate: row.StartDate,
           EndDate: row.EndDate,
-          Status: row.Status,
+          Status: row.EffectiveStatus || row.Status,
           AssignedAdminId: row.AssignedAdminId,
           AssignedAdminName: row.AssignedAdminName || null,
           AssignedAdminNames: row.AssignedAdminNames
@@ -640,6 +714,10 @@ class SurveyService {
         .query(`
           SELECT 
             s.*,
+            CASE
+              WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+              ELSE s.Status
+            END AS EffectiveStatus,
             sc.ConfigId, sc.HeroTitle, sc.HeroSubtitle, sc.HeroImageUrl,
             sc.LogoUrl, sc.BackgroundColor, sc.BackgroundImageUrl,
             sc.PrimaryColor, sc.SecondaryColor, sc.FontFamily, sc.ButtonStyle,
@@ -660,7 +738,7 @@ class SurveyService {
         Description: row.Description,
         StartDate: row.StartDate,
         EndDate: row.EndDate,
-        Status: row.Status,
+        Status: row.EffectiveStatus || row.Status,
         AssignedAdminId: row.AssignedAdminId,
         TargetRespondents: row.TargetRespondents,
         TargetScore: row.TargetScore,
@@ -1187,13 +1265,27 @@ class SurveyService {
         // Update existing survey
         const surveyCheck = await new sql.Request(transaction)
           .input('surveyId', sql.UniqueIdentifier, data.surveyId)
-          .query('SELECT SurveyId, Status FROM Surveys WHERE SurveyId = @surveyId');
+          .query('SELECT SurveyId, Status, StartDate, EndDate FROM Surveys WHERE SurveyId = @surveyId');
 
         if (surveyCheck.recordset.length === 0) {
           throw new NotFoundError('Survey not found');
         }
 
         isUpdate = true;
+        const existingSurvey = surveyCheck.recordset[0];
+        const nextStartDate = data.startDate !== undefined
+          ? this.normalizeDateValue(data.startDate, 'start date')
+          : (existingSurvey.StartDate ? new Date(existingSurvey.StartDate) : null);
+        const nextEndDate = data.endDate !== undefined
+          ? this.normalizeDateValue(data.endDate, 'end date')
+          : (existingSurvey.EndDate ? new Date(existingSurvey.EndDate) : null);
+        const nextStatus = data.status !== undefined ? data.status : existingSurvey.Status;
+
+        if (nextStartDate && nextEndDate) {
+          this.validateDates(nextStartDate, nextEndDate);
+        }
+
+        this.validatePublishWindow(nextStatus, nextStartDate, nextEndDate);
 
         // Update survey basic info
         const updateFields = [];
@@ -1218,12 +1310,12 @@ class SurveyService {
 
         if (data.startDate !== undefined) {
           updateFields.push('StartDate = @startDate');
-          request.input('startDate', sql.DateTime2, new Date(data.startDate));
+          request.input('startDate', sql.DateTime2, nextStartDate);
         }
 
         if (data.endDate !== undefined) {
           updateFields.push('EndDate = @endDate');
-          request.input('endDate', sql.DateTime2, new Date(data.endDate));
+          request.input('endDate', sql.DateTime2, nextEndDate);
         }
 
         if (data.status !== undefined) {
@@ -1288,7 +1380,10 @@ class SurveyService {
           throw new ValidationError('Start date and end date are required');
         }
 
-        this.validateDates(data.startDate, data.endDate);
+        const startDate = this.normalizeDateValue(data.startDate, 'start date');
+        const endDate = this.normalizeDateValue(data.endDate, 'end date');
+        this.validateDates(startDate, endDate);
+        this.validatePublishWindow(data.status || 'Draft', startDate, endDate);
 
         if (data.targetScore !== undefined && data.targetScore !== null) {
           if (data.targetScore < 0 || data.targetScore > 10) {
@@ -1299,8 +1394,8 @@ class SurveyService {
         const surveyResult = await new sql.Request(transaction)
           .input('title', sql.NVarChar(500), data.title)
           .input('description', sql.NVarChar(sql.MAX), data.description || null)
-          .input('startDate', sql.DateTime2, new Date(data.startDate))
-          .input('endDate', sql.DateTime2, new Date(data.endDate))
+          .input('startDate', sql.DateTime2, startDate)
+          .input('endDate', sql.DateTime2, endDate)
           .input('status', sql.NVarChar(50), data.status || 'Draft')
           .input('assignedAdminId', sql.UniqueIdentifier, data.assignedAdminId || null)
           .input('targetRespondents', sql.Int, data.targetRespondents || null)
@@ -1308,17 +1403,38 @@ class SurveyService {
           .input('duplicatePreventionEnabled', sql.Bit, data.duplicatePreventionEnabled !== false)
           .input('createdBy', sql.UniqueIdentifier, data.userId)
           .query(`
-            INSERT INTO Surveys (
-              Title, Description, StartDate, EndDate, Status,
-              AssignedAdminId, TargetRespondents, TargetScore,
-              DuplicatePreventionEnabled, CreatedBy, CreatedAt
-            )
-            OUTPUT INSERTED.*
-            VALUES (
-              @title, @description, @startDate, @endDate, @status,
-              @assignedAdminId, @targetRespondents, @targetScore,
-              @duplicatePreventionEnabled, @createdBy, GETDATE()
-            )
+            IF (
+              (OBJECT_ID(N'dbo.Events', N'U') IS NOT NULL AND COL_LENGTH('dbo.Events', 'EventTypeId') IS NOT NULL)
+              OR (OBJECT_ID(N'dbo.Surveys', N'U') IS NOT NULL AND COL_LENGTH('dbo.Surveys', 'EventTypeId') IS NOT NULL)
+            ) AND OBJECT_ID(N'dbo.EventTypes', N'U') IS NOT NULL
+            BEGIN
+              INSERT INTO Surveys (
+                Title, Description, StartDate, EndDate, Status,
+                AssignedAdminId, TargetRespondents, TargetScore,
+                DuplicatePreventionEnabled, CreatedBy, CreatedAt, EventTypeId
+              )
+              OUTPUT INSERTED.*
+              VALUES (
+                @title, @description, @startDate, @endDate, @status,
+                @assignedAdminId, @targetRespondents, @targetScore,
+                @duplicatePreventionEnabled, @createdBy, GETDATE(),
+                (SELECT TOP 1 EventTypeId FROM EventTypes WHERE Code = 'SURVEY' AND IsActive = 1)
+              )
+            END
+            ELSE
+            BEGIN
+              INSERT INTO Surveys (
+                Title, Description, StartDate, EndDate, Status,
+                AssignedAdminId, TargetRespondents, TargetScore,
+                DuplicatePreventionEnabled, CreatedBy, CreatedAt
+              )
+              OUTPUT INSERTED.*
+              VALUES (
+                @title, @description, @startDate, @endDate, @status,
+                @assignedAdminId, @targetRespondents, @targetScore,
+                @duplicatePreventionEnabled, @createdBy, GETDATE()
+              )
+            END
           `);
 
         survey = surveyResult.recordset[0];
@@ -1620,10 +1736,6 @@ class SurveyService {
         throw new ValidationError('Question type is required');
       }
 
-      if (!data.promptText || data.promptText.trim().length === 0) {
-        throw new ValidationError('Prompt text is required');
-      }
-
       if (!data.createdBy) {
         throw new ValidationError('CreatedBy is required');
       }
@@ -1670,7 +1782,7 @@ class SurveyService {
       const result = await pool.request()
         .input('surveyId', sql.UniqueIdentifier, surveyId)
         .input('type', sql.NVarChar(50), data.type)
-        .input('promptText', sql.NVarChar(sql.MAX), data.promptText)
+        .input('promptText', sql.NVarChar(sql.MAX), data.promptText ?? '')
         .input('subtitle', sql.NVarChar(500), data.subtitle || null)
         .input('imageUrl', sql.NVarChar(500), data.imageUrl || null)
         .input('isMandatory', sql.Bit, data.isMandatory || false)
@@ -1753,11 +1865,8 @@ class SurveyService {
       }
 
       if (data.promptText !== undefined) {
-        if (!data.promptText || data.promptText.trim().length === 0) {
-          throw new ValidationError('Prompt text cannot be empty');
-        }
         updateFields.push('PromptText = @promptText');
-        request.input('promptText', sql.NVarChar(sql.MAX), data.promptText);
+        request.input('promptText', sql.NVarChar(sql.MAX), data.promptText ?? '');
       }
 
       if (data.subtitle !== undefined) {
@@ -2020,7 +2129,7 @@ class SurveyService {
       }
 
       // Generate survey link
-      const surveyLink = `${config.baseUrl}/survey/index?id=${encodeURIComponent(surveyId)}`;
+      const surveyLink = `${config.publicSurveyBaseUrl}/survey/${encodeURIComponent(surveyId)}`;
       let shortenedLink = null;
 
       // Generate shortened link if requested
@@ -2166,6 +2275,57 @@ class SurveyService {
   }
 
   /**
+   * Normalize UI time input so it is accepted by SQL time columns.
+   * Supports `HH:mm` and `HH:mm:ss`.
+   * @param {string|null} scheduledTime
+   * @returns {string|null}
+   */
+  normalizeScheduledTime(scheduledTime) {
+    if (scheduledTime === null || scheduledTime === undefined || scheduledTime === '') {
+      return null;
+    }
+
+    const [hoursText, minutesText, secondsText = '00'] = String(scheduledTime).split(':');
+    const hours = Number.parseInt(hoursText, 10);
+    const minutes = Number.parseInt(minutesText, 10);
+    const seconds = Number.parseInt(secondsText, 10);
+
+    if (
+      Number.isNaN(hours)
+      || Number.isNaN(minutes)
+      || Number.isNaN(seconds)
+      || hours < 0
+      || hours > 23
+      || minutes < 0
+      || minutes > 59
+      || seconds < 0
+      || seconds > 59
+    ) {
+      throw new ValidationError('Scheduled time must use HH:mm or HH:mm:ss format');
+    }
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  toSqlTimeValue(scheduledTime) {
+    const normalizedTime = this.normalizeScheduledTime(scheduledTime);
+    if (!normalizedTime) {
+      return null;
+    }
+
+    const [hoursText, minutesText, secondsText] = normalizedTime.split(':');
+    const sqlTimeValue = new Date('1970-01-01T00:00:00');
+    sqlTimeValue.setHours(
+      Number.parseInt(hoursText, 10),
+      Number.parseInt(minutesText, 10),
+      Number.parseInt(secondsText, 10),
+      0
+    );
+
+    return sqlTimeValue;
+  }
+
+  /**
    * Calculate next execution time based on frequency
    * @param {Date} scheduledDate - Initial scheduled date
    * @param {string} frequency - 'once', 'daily', 'weekly', 'monthly'
@@ -2212,6 +2372,35 @@ class SurveyService {
     }
 
     return nextExecution;
+  }
+
+  resolveInitialExecution(scheduledDate, frequency, scheduledTime, dayOfWeek) {
+    const initialExecution = new Date(scheduledDate);
+    if (Number.isNaN(initialExecution.getTime())) {
+      throw new ValidationError('Invalid scheduled date');
+    }
+
+    if (frequency === 'once') {
+      return initialExecution;
+    }
+
+    if (scheduledTime) {
+      const [hoursText, minutesText] = String(scheduledTime).split(':');
+      const hours = Number.parseInt(hoursText, 10);
+      const minutes = Number.parseInt(minutesText, 10);
+      if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+        initialExecution.setHours(hours, minutes, 0, 0);
+      }
+    }
+
+    if (frequency === 'weekly' && dayOfWeek !== null && dayOfWeek !== undefined) {
+      const normalizedTargetDay = Number(dayOfWeek);
+      const currentDay = initialExecution.getDay();
+      const daysToAdd = (normalizedTargetDay - currentDay + 7) % 7;
+      initialExecution.setDate(initialExecution.getDate() + daysToAdd);
+    }
+
+    return initialExecution;
   }
 
   /**
@@ -2263,6 +2452,9 @@ class SurveyService {
         throw new ValidationError('Recurring schedules require scheduledTime in HH:mm format');
       }
 
+      const normalizedScheduledTime = this.normalizeScheduledTime(scheduledTime);
+      const sqlScheduledTime = this.toSqlTimeValue(scheduledTime);
+
       const pool = await db.getPool();
 
       // Verify survey exists
@@ -2275,10 +2467,10 @@ class SurveyService {
       }
 
       // Calculate next execution time
-      const nextExecutionAt = this.calculateNextExecution(
+      const nextExecutionAt = this.resolveInitialExecution(
         new Date(scheduledDate),
         frequency,
-        scheduledTime,
+        normalizedScheduledTime,
         dayOfWeek
       );
 
@@ -2288,7 +2480,7 @@ class SurveyService {
         .input('operationType', sql.NVarChar(50), 'Blast')
         .input('frequency', sql.NVarChar(50), frequency)
         .input('scheduledDate', sql.DateTime2, new Date(scheduledDate))
-        .input('scheduledTime', sql.Time, scheduledTime)
+        .input('scheduledTime', sql.Time, sqlScheduledTime)
         .input('dayOfWeek', sql.Int, dayOfWeek)
         .input('emailTemplate', sql.NVarChar(sql.MAX), emailTemplate)
         .input('embedCover', sql.Bit, embedCover)
@@ -2399,6 +2591,9 @@ class SurveyService {
         throw new ValidationError('Recurring schedules require scheduledTime in HH:mm format');
       }
 
+      const normalizedScheduledTime = this.normalizeScheduledTime(scheduledTime);
+      const sqlScheduledTime = this.toSqlTimeValue(scheduledTime);
+
       const pool = await db.getPool();
 
       // Verify survey exists
@@ -2411,10 +2606,10 @@ class SurveyService {
       }
 
       // Calculate next execution time
-      const nextExecutionAt = this.calculateNextExecution(
+      const nextExecutionAt = this.resolveInitialExecution(
         new Date(scheduledDate),
         frequency,
-        scheduledTime,
+        normalizedScheduledTime,
         dayOfWeek
       );
 
@@ -2424,7 +2619,7 @@ class SurveyService {
         .input('operationType', sql.NVarChar(50), 'Reminder')
         .input('frequency', sql.NVarChar(50), frequency)
         .input('scheduledDate', sql.DateTime2, new Date(scheduledDate))
-        .input('scheduledTime', sql.Time, scheduledTime)
+        .input('scheduledTime', sql.Time, sqlScheduledTime)
         .input('dayOfWeek', sql.Int, dayOfWeek)
         .input('emailTemplate', sql.NVarChar(sql.MAX), emailTemplate)
         .input('embedCover', sql.Bit, embedCover)
