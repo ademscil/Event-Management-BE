@@ -46,6 +46,7 @@ describe('MappingService', () => {
         mockRequest.query
           .mockResolvedValueOnce({ recordset: [{ FunctionId: functionId }] }) // Function exists
           .mockResolvedValueOnce({ recordset: [{ ApplicationId: applicationId }] }) // Application exists
+          .mockResolvedValueOnce({ recordset: [] }) // No conflicting ownership
           .mockResolvedValueOnce({ recordset: [] }) // No duplicate
           .mockResolvedValueOnce({ 
             recordset: [{ 
@@ -81,11 +82,26 @@ describe('MappingService', () => {
         mockRequest.query
           .mockResolvedValueOnce({ recordset: [{ FunctionId: functionId }] }) // Function exists
           .mockResolvedValueOnce({ recordset: [{ ApplicationId: applicationId }] }) // Application exists
+          .mockResolvedValueOnce({ recordset: [{ FunctionId: functionId }] }) // Owned by same function
           .mockResolvedValueOnce({ recordset: [{ MappingId: 'existing' }] }); // Duplicate found
 
         await expect(
           mappingService.createFunctionAppMapping(functionId, applicationId)
         ).rejects.toThrow('Mapping already exists');
+      });
+
+      it('should throw error if application is already mapped to another function', async () => {
+        const functionId = 'func-123';
+        const applicationId = 'app-456';
+
+        mockRequest.query
+          .mockResolvedValueOnce({ recordset: [{ FunctionId: functionId }] }) // Function exists
+          .mockResolvedValueOnce({ recordset: [{ ApplicationId: applicationId }] }) // Application exists
+          .mockResolvedValueOnce({ recordset: [{ MappingId: 'existing', FunctionId: 'func-other' }] }); // Already owned
+
+        await expect(
+          mappingService.createFunctionAppMapping(functionId, applicationId)
+        ).rejects.toThrow('Application is already mapped to another Function');
       });
     });
 

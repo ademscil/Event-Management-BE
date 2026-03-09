@@ -1,8 +1,8 @@
 const sql = require('mssql');
-const bcrypt = require('bcrypt');
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
+const { hashPasswordLegacy, verifyPassword } = require('../utils/passwordHash');
 
 /**
  * Custom error classes
@@ -37,7 +37,6 @@ class NotFoundError extends Error {
 class UserService {
   constructor() {
     this.repository = new BaseRepository('Users', 'UserId');
-    this.saltRounds = 10;
     this.corporateHoName = 'Corporate HO';
   }
 
@@ -223,6 +222,28 @@ class UserService {
     return emailRegex.test(email);
   }
 
+  normalizePhoneNumber(phoneNumber) {
+    const digits = String(phoneNumber || '').replace(/\D/g, '');
+    if (!digits) {
+      return null;
+    }
+
+    if (digits.startsWith('62')) {
+      return digits;
+    }
+
+    if (digits.startsWith('0')) {
+      return `62${digits.slice(1)}`;
+    }
+
+    return digits;
+  }
+
+  validatePhoneNumber(phoneNumber) {
+    const normalized = this.normalizePhoneNumber(phoneNumber);
+    return !normalized || (normalized.length >= 10 && normalized.length <= 15);
+  }
+
   /**
    * Validate username format
    * @param {string} username - Username
@@ -263,6 +284,10 @@ class UserService {
         throw new ValidationError(`Role must be one of: ${validRoles.join(', ')}`);
       }
 
+      if (data.phoneNumber !== undefined && !this.validatePhoneNumber(data.phoneNumber)) {
+        throw new ValidationError('Invalid phone number format');
+      }
+
       const pool = await db.getPool();
       const orgHierarchy = await this.validateOrgHierarchy(
         pool,
@@ -289,6 +314,17 @@ class UserService {
         throw new ConflictError(`Email '${data.email}' already exists`);
       }
 
+      const normalizedPhoneNumber = this.normalizePhoneNumber(data.phoneNumber);
+      if (normalizedPhoneNumber) {
+        const phoneCheck = await pool.request()
+          .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
+          .query('SELECT UserId FROM Users WHERE PhoneNumber = @phoneNumber');
+
+        if (phoneCheck.recordset.length > 0) {
+          throw new ConflictError(`Phone number '${normalizedPhoneNumber}' already exists`);
+        }
+      }
+
       // Handle password hashing for non-LDAP users
       let passwordHash = null;
       const useLDAP = data.useLDAP !== false; // Default to true
@@ -300,7 +336,7 @@ class UserService {
         if (data.password.length < 8) {
           throw new ValidationError('Password must be at least 8 characters');
         }
-        passwordHash = await bcrypt.hash(data.password, this.saltRounds);
+        passwordHash = hashPasswordLegacy(data.password);
       }
 
       // Create user
@@ -309,6 +345,7 @@ class UserService {
         .input('displayName', sql.NVarChar(200), data.displayName)
         .input('npk', sql.NVarChar(50), data.npk || null)
         .input('email', sql.NVarChar(200), data.email)
+        .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
         .input('role', sql.NVarChar(50), data.role)
         .input('useLDAP', sql.Bit, useLDAP)
         .input('passwordHash', sql.NVarChar(255), passwordHash)
@@ -317,12 +354,12 @@ class UserService {
         .input('departmentId', sql.UniqueIdentifier, orgHierarchy.departmentId ?? null)
         .query(`
           INSERT INTO Users (
-            Username, NPK, DisplayName, Email, Role, UseLDAP, PasswordHash,
+            Username, NPK, DisplayName, Email, PhoneNumber, Role, UseLDAP, PasswordHash,
             BusinessUnitId, DivisionId, DepartmentId, IsActive, CreatedAt
           )
           OUTPUT INSERTED.*
           VALUES (
-            @username, @npk, @displayName, @email, @role, @useLDAP, @passwordHash,
+            @username, @npk, @displayName, @email, @phoneNumber, @role, @useLDAP, @passwordHash,
             @businessUnitId, @divisionId, @departmentId, 1, GETDATE()
           )
         `);
@@ -370,6 +407,10 @@ class UserService {
         throw new ValidationError('Invalid email format');
       }
 
+      if (data.phoneNumber !== undefined && !this.validatePhoneNumber(data.phoneNumber)) {
+        throw new ValidationError('Invalid phone number format');
+      }
+
       // Validate username if provided
       if (data.username !== undefined) {
         const normalizedUsername = String(data.username || '').trim();
@@ -396,6 +437,20 @@ class UserService {
 
         if (emailCheck.recordset.length > 0) {
           throw new ConflictError(`Email '${data.email}' already exists`);
+        }
+      }
+
+      const normalizedPhoneNumber = data.phoneNumber !== undefined
+        ? this.normalizePhoneNumber(data.phoneNumber)
+        : undefined;
+      if (normalizedPhoneNumber) {
+        const phoneCheck = await pool.request()
+          .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
+          .input('userId', sql.UniqueIdentifier, userId)
+          .query('SELECT UserId FROM Users WHERE PhoneNumber = @phoneNumber AND UserId != @userId');
+
+        if (phoneCheck.recordset.length > 0) {
+          throw new ConflictError(`Phone number '${normalizedPhoneNumber}' already exists`);
         }
       }
 
@@ -441,6 +496,10 @@ class UserService {
       if (data.email !== undefined) {
         updateFields.push('Email = @email');
         request.input('email', sql.NVarChar(200), data.email);
+      }
+      if (data.phoneNumber !== undefined) {
+        updateFields.push('PhoneNumber = @phoneNumber');
+        request.input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber);
       }
       if (data.role !== undefined) {
         updateFields.push('Role = @role');
@@ -545,6 +604,7 @@ class UserService {
             u.NPK,
             u.DisplayName,
             u.Email,
+            u.PhoneNumber,
             u.Role,
             u.UseLDAP,
             u.IsActive,
@@ -600,7 +660,7 @@ class UserService {
       }
 
       if (filter.search) {
-        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)");
+        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search OR ISNULL(u.PhoneNumber,'') LIKE @search)");
         request.input('search', sql.NVarChar(210), `%${filter.search}%`);
       }
 
@@ -616,6 +676,7 @@ class UserService {
             u.NPK,
             u.DisplayName,
           u.Email,
+          u.PhoneNumber,
           u.Role,
           u.UseLDAP,
           u.IsActive,
@@ -725,7 +786,7 @@ class UserService {
       }
 
       // Hash password
-      const passwordHash = await bcrypt.hash(password, this.saltRounds);
+      const passwordHash = hashPasswordLegacy(password);
 
       const result = await pool.request()
         .input('userId', sql.UniqueIdentifier, userId)
@@ -780,7 +841,7 @@ class UserService {
         return false;
       }
 
-      return await bcrypt.compare(password, user.PasswordHash);
+      return await verifyPassword(password, user.PasswordHash);
     } catch (error) {
       if (error.name === 'ValidationError') {
         throw error;

@@ -14,7 +14,10 @@ const createFunctionValidation = [
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
-    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters')
+    .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
+  body('deptId')
+    .optional({ nullable: true })
+    .isUUID().withMessage('Department ID must be a valid UUID')
 ];
 
 /**
@@ -33,7 +36,10 @@ const updateFunctionValidation = [
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('isActive')
     .optional()
-    .isBoolean().withMessage('isActive must be boolean')
+    .isBoolean().withMessage('isActive must be boolean'),
+  body('deptId')
+    .optional({ nullable: true })
+    .isUUID().withMessage('Department ID must be a valid UUID')
 ];
 
 /**
@@ -52,20 +58,13 @@ async function createFunction(req, res) {
       });
     }
 
-    const { code, name } = req.body;
-    const result = await functionService.createFunction({ code, name });
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Function creation failed',
-        message: result.errorMessage
-      });
-    }
+    const { code, name, deptId } = req.body;
+    const result = await functionService.createFunction({ code, name, deptId });
 
     res.status(201).json({
       success: true,
       message: 'Function created successfully',
-      function: result.function
+      function: result
     });
 
   } catch (error) {
@@ -155,17 +154,10 @@ async function updateFunction(req, res) {
 
     const result = await functionService.updateFunction(functionId, updates);
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Function update failed',
-        message: result.errorMessage
-      });
-    }
-
     res.json({
       success: true,
       message: 'Function updated successfully',
-      function: result.function
+      function: result
     });
 
   } catch (error) {
@@ -186,14 +178,7 @@ async function updateFunction(req, res) {
 async function deleteFunction(req, res) {
   try {
     const functionId = req.params.id;
-    const result = await functionService.deleteFunction(functionId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Function deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await functionService.deleteFunction(functionId);
 
     res.json({
       success: true,

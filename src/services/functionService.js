@@ -70,6 +70,16 @@ class FunctionService {
 
       const pool = await db.getPool();
 
+      if (data.deptId) {
+        const deptCheck = await pool.request()
+          .input('deptId', sql.UniqueIdentifier, data.deptId)
+          .query('SELECT DepartmentId FROM Departments WHERE DepartmentId = @deptId');
+
+        if (deptCheck.recordset.length === 0) {
+          throw new ValidationError('Department not found');
+        }
+      }
+
       // Check for duplicate code
       const codeCheck = await pool.request()
         .input('code', sql.NVarChar(20), data.code)
@@ -83,10 +93,11 @@ class FunctionService {
       const result = await pool.request()
         .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
+        .input('deptId', sql.UniqueIdentifier, data.deptId || null)
         .query(`
-          INSERT INTO Functions (Code, Name, IsActive, CreatedAt)
+          INSERT INTO Functions (Code, Name, DeptId, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@code, @name, 1, GETDATE())
+          VALUES (@code, @name, @deptId, 1, GETDATE())
         `);
 
       logger.info('Function created', { code: data.code });
@@ -122,6 +133,16 @@ class FunctionService {
       // Validate code if provided
       if (data.code && !this.validateCode(data.code)) {
         throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
+      }
+
+      if (data.deptId !== undefined && data.deptId !== null) {
+        const deptCheck = await pool.request()
+          .input('deptId', sql.UniqueIdentifier, data.deptId)
+          .query('SELECT DepartmentId FROM Departments WHERE DepartmentId = @deptId');
+
+        if (deptCheck.recordset.length === 0) {
+          throw new ValidationError('Department not found');
+        }
       }
 
       // Check for duplicate code if code is being changed
@@ -161,6 +182,10 @@ class FunctionService {
       if (data.isActive !== undefined) {
         updateFields.push('IsActive = @isActive');
         request.input('isActive', sql.Bit, data.isActive);
+      }
+      if (data.deptId !== undefined) {
+        updateFields.push('DeptId = @deptId');
+        request.input('deptId', sql.UniqueIdentifier, data.deptId || null);
       }
 
       if (updateFields.length === 0) {
@@ -272,13 +297,17 @@ class FunctionService {
   async getFunctions(filter = {}) {
     try {
       const pool = await db.getPool();
-      let query = 'SELECT * FROM Functions';
+      let query = `
+        SELECT f.*, d.Code AS DepartmentCode, d.Name AS DepartmentName
+        FROM Functions f
+        LEFT JOIN Departments d ON f.DeptId = d.DepartmentId
+      `;
 
       if (!filter.includeInactive) {
-        query += ' WHERE IsActive = 1';
+        query += ' WHERE f.IsActive = 1';
       }
 
-      query += ' ORDER BY Name';
+      query += ' ORDER BY f.Name';
 
       const result = await pool.request().query(query);
       return result.recordset;
@@ -298,7 +327,12 @@ class FunctionService {
       const pool = await db.getPool();
       const result = await pool.request()
         .input('functionId', sql.UniqueIdentifier, functionId)
-        .query('SELECT * FROM Functions WHERE FunctionId = @functionId');
+        .query(`
+          SELECT f.*, d.Code AS DepartmentCode, d.Name AS DepartmentName
+          FROM Functions f
+          LEFT JOIN Departments d ON f.DeptId = d.DepartmentId
+          WHERE f.FunctionId = @functionId
+        `);
 
       if (result.recordset.length === 0) {
         throw new NotFoundError('Function not found');

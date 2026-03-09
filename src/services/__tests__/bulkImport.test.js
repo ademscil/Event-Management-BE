@@ -244,6 +244,13 @@ describe('Bulk Import Service', () => {
       expect(config.columnMapping).toHaveProperty('Business Unit Code');
     });
 
+    test('should include Department Code in Function import config', () => {
+      const config = service._getEntityConfig('Function');
+
+      expect(config.entityType).toBe('Function');
+      expect(config.columnMapping).toHaveProperty('Department Code');
+    });
+
     test('should throw error for unknown entity type', () => {
       expect(() => service._getEntityConfig('UnknownType')).toThrow('Unknown entity type');
     });

@@ -361,6 +361,10 @@ class TemplateParser {
       errors.push('Name must be 1-200 characters');
     }
 
+    if (record.departmentCode && record.departmentCode.length > 20) {
+      errors.push('Department Code must be 20 characters or less');
+    }
+
     return errors;
   }
 
@@ -432,6 +436,10 @@ class TemplateParser {
       errors.push('Email is required');
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(record.email)) {
       errors.push('Invalid email format');
+    }
+
+    if (record.phoneNumber && !/^[0-9+\-\s()]{8,20}$/.test(record.phoneNumber)) {
+      errors.push('Invalid phone number format');
     }
 
     if (!record.role || !['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead'].includes(record.role)) {

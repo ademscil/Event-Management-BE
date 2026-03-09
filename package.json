@@ -10,6 +10,7 @@
     "test:ci": "jest --runInBand --coverage=false --testPathIgnorePatterns=src/services/__tests__/surveyService.saveSurvey.test.js --testPathIgnorePatterns=\\.integration\\.test\\.js$ --testPathIgnorePatterns=\\.property\\.test\\.js$",
     "test:watch": "jest --watch",
     "migrate": "node src/database/migrate.js",
+    "db:doctor": "node src/database/doctor.js",
     "db:init": "node src/database/init-database.js",
     "db:seed": "node src/database/seed.js",
     "db:seed:dashboard": "node scripts/seed-dashboard-overview.js",

@@ -1,9 +1,9 @@
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcrypt');
 const config = require('../config');
 const logger = require('../config/logger');
 const ldapService = require('./ldapService');
 const db = require('../database/connection');
+const { verifyPassword } = require('../utils/passwordHash');
 
 /**
  * @typedef {Object} LoginResult
@@ -43,6 +43,24 @@ class AuthService {
     this.loginLockoutMaxAttempts = Number(config.security?.loginLockoutMaxAttempts || 5);
     this.loginLockoutWindowMinutes = Number(config.security?.loginLockoutWindowMinutes || 15);
     this.loginLockoutDurationMinutes = Number(config.security?.loginLockoutDurationMinutes || 15);
+    this.passwordResetExpirationMinutes = Number(process.env.PASSWORD_RESET_EXPIRATION_MINUTES || 30);
+  }
+
+  normalizePhoneNumber(phoneNumber) {
+    const digits = String(phoneNumber || '').replace(/\D/g, '');
+    if (!digits) {
+      return '';
+    }
+
+    if (digits.startsWith('62')) {
+      return digits;
+    }
+
+    if (digits.startsWith('0')) {
+      return `62${digits.slice(1)}`;
+    }
+
+    return digits;
   }
 
   /**
@@ -182,10 +200,262 @@ class AuthService {
     }
 
     try {
-      return await bcrypt.compare(password, user.PasswordHash);
+      return await verifyPassword(password, user.PasswordHash);
     } catch (error) {
       logger.error('Password comparison error:', error);
       return false;
+    }
+  }
+
+  async getLocalUserByRecovery(method, identifier) {
+    const pool = await db.getPool();
+    const normalizedMethod = String(method || '').trim().toLowerCase();
+    const request = pool.request();
+
+    let whereClause = '';
+    if (normalizedMethod === 'phone') {
+      const normalizedPhone = this.normalizePhoneNumber(identifier);
+      if (!normalizedPhone) {
+        return null;
+      }
+      whereClause = 'PhoneNumber = @identifier';
+      request.input('identifier', db.sql.NVarChar, normalizedPhone);
+    } else {
+      const normalizedEmail = String(identifier || '').trim().toLowerCase();
+      if (!normalizedEmail) {
+        return null;
+      }
+      whereClause = 'LOWER(LTRIM(RTRIM(Email))) = @identifier';
+      request.input('identifier', db.sql.NVarChar, normalizedEmail);
+    }
+
+    const result = await request.query(`
+      SELECT TOP 1 UserId, Username, DisplayName, Email, PhoneNumber, UseLDAP, IsActive
+      FROM Users
+      WHERE ${whereClause}
+        AND IsActive = 1
+        AND UseLDAP = 0
+    `);
+
+    return result.recordset[0] || null;
+  }
+
+  hashOneTimeToken(token) {
+    const crypto = require('crypto');
+    return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+  }
+
+  async invalidateOutstandingResetTokens(userId) {
+    const pool = await db.getPool();
+    await pool.request()
+      .input('userId', db.sql.UniqueIdentifier, userId)
+      .query(`
+        UPDATE PasswordResetTokens
+        SET UsedAt = GETDATE()
+        WHERE UserId = @userId
+          AND UsedAt IS NULL
+          AND ExpiresAt > GETDATE()
+      `);
+  }
+
+  async requestPasswordReset(method, identifier, requestMeta = {}) {
+    const normalizedMethod = String(method || 'email').trim().toLowerCase() === 'phone' ? 'phone' : 'email';
+    const genericMessage = normalizedMethod === 'phone'
+      ? 'Jika nomor telepon terdaftar untuk user local, link reset akan dikirim ke email akun yang terhubung.'
+      : 'Jika email terdaftar untuk user local, link reset password akan dikirim.';
+
+    try {
+      const user = await this.getLocalUserByRecovery(normalizedMethod, identifier);
+      if (!user || !user.Email) {
+        return {
+          success: true,
+          message: genericMessage
+        };
+      }
+
+      const crypto = require('crypto');
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      const tokenHash = this.hashOneTimeToken(rawToken);
+      const expiresAt = new Date(Date.now() + this.passwordResetExpirationMinutes * 60 * 1000);
+      const pool = await db.getPool();
+      const frontendBaseUrl = process.env.FRONTEND_BASE_URL
+        || process.env.PUBLIC_SURVEY_BASE_URL
+        || (process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : process.env.BASE_URL)
+        || 'http://localhost:3000';
+      const resetLink = `${String(frontendBaseUrl).replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
+
+      await this.invalidateOutstandingResetTokens(user.UserId);
+
+      await pool.request()
+        .input('userId', db.sql.UniqueIdentifier, user.UserId)
+        .input('tokenHash', db.sql.NVarChar, tokenHash)
+        .input('requestedByMethod', db.sql.NVarChar, normalizedMethod)
+        .input('requestedTo', db.sql.NVarChar, normalizedMethod === 'phone' ? (user.PhoneNumber || '') : user.Email)
+        .input('expiresAt', db.sql.DateTime2, expiresAt)
+        .input('createdByIp', db.sql.NVarChar, requestMeta.ipAddress || null)
+        .query(`
+          INSERT INTO PasswordResetTokens (
+            UserId, TokenHash, RequestedByMethod, RequestedTo, ExpiresAt, CreatedByIp
+          )
+          VALUES (
+            @userId, @tokenHash, @requestedByMethod, @requestedTo, @expiresAt, @createdByIp
+          )
+        `);
+
+      const emailService = require('./emailService');
+      const sendResult = await emailService.sendEmail({
+        to: user.Email,
+        subject: 'Reset Password CSI Web App',
+        template: 'password-reset',
+        data: {
+          displayName: user.DisplayName || user.Username,
+          resetLink,
+          expiresInMinutes: this.passwordResetExpirationMinutes,
+          requestMethod: normalizedMethod,
+          maskedIdentifier: normalizedMethod === 'phone'
+            ? (user.PhoneNumber || '')
+            : user.Email
+        },
+        emailType: 'Notification'
+      });
+
+      if (!sendResult.success) {
+        await pool.request()
+          .input('tokenHash', db.sql.NVarChar, tokenHash)
+          .query(`
+            UPDATE PasswordResetTokens
+            SET UsedAt = GETDATE()
+            WHERE TokenHash = @tokenHash
+              AND UsedAt IS NULL
+          `);
+
+        logger.error('Password reset email delivery failed', {
+          userId: user.UserId,
+          method: normalizedMethod,
+          error: sendResult.error
+        });
+
+        return {
+          success: false,
+          message: 'Gagal mengirim link reset password. Silakan coba lagi.'
+        };
+      }
+
+      logger.info('Password reset requested', {
+        userId: user.UserId,
+        method: normalizedMethod
+      });
+
+      return {
+        success: true,
+        message: genericMessage
+      };
+    } catch (error) {
+      logger.error('Password reset request failed:', error);
+      return {
+        success: false,
+        message: 'Gagal memproses permintaan reset password. Silakan coba lagi.'
+      };
+    }
+  }
+
+  async resetPassword(token, newPassword) {
+    try {
+      if (!token || !newPassword) {
+        return {
+          success: false,
+          errorMessage: 'Token dan password baru wajib diisi'
+        };
+      }
+
+      if (String(newPassword).length < 8) {
+        return {
+          success: false,
+          errorMessage: 'Password baru minimal 8 karakter'
+        };
+      }
+
+      const tokenHash = this.hashOneTimeToken(token);
+      const pool = await db.getPool();
+      const tokenResult = await pool.request()
+        .input('tokenHash', db.sql.NVarChar, tokenHash)
+        .query(`
+          SELECT TOP 1 prt.PasswordResetTokenId, prt.UserId, prt.ExpiresAt, prt.UsedAt,
+                 u.UseLDAP, u.IsActive
+          FROM PasswordResetTokens prt
+          INNER JOIN Users u ON u.UserId = prt.UserId
+          WHERE prt.TokenHash = @tokenHash
+          ORDER BY prt.CreatedAt DESC
+        `);
+
+      const tokenRow = tokenResult.recordset[0];
+      if (!tokenRow) {
+        return {
+          success: false,
+          errorMessage: 'Token reset password tidak valid'
+        };
+      }
+
+      if (tokenRow.UsedAt) {
+        return {
+          success: false,
+          errorMessage: 'Token reset password sudah digunakan'
+        };
+      }
+
+      if (!tokenRow.IsActive || tokenRow.UseLDAP) {
+        return {
+          success: false,
+          errorMessage: 'Reset password hanya berlaku untuk user local yang aktif'
+        };
+      }
+
+      if (new Date(tokenRow.ExpiresAt) <= new Date()) {
+        return {
+          success: false,
+          errorMessage: 'Token reset password sudah kedaluwarsa'
+        };
+      }
+
+      const passwordHash = require('../utils/passwordHash').hashPasswordLegacy(newPassword);
+
+      await pool.request()
+        .input('userId', db.sql.UniqueIdentifier, tokenRow.UserId)
+        .input('passwordHash', db.sql.NVarChar, passwordHash)
+        .query(`
+          UPDATE Users
+          SET PasswordHash = @passwordHash,
+              UpdatedAt = GETDATE()
+          WHERE UserId = @userId
+        `);
+
+      await pool.request()
+        .input('passwordResetTokenId', db.sql.UniqueIdentifier, tokenRow.PasswordResetTokenId)
+        .query(`
+          UPDATE PasswordResetTokens
+          SET UsedAt = GETDATE()
+          WHERE PasswordResetTokenId = @passwordResetTokenId
+        `);
+
+      await pool.request()
+        .input('userId', db.sql.UniqueIdentifier, tokenRow.UserId)
+        .query(`
+          UPDATE Sessions
+          SET IsActive = 0, InvalidatedAt = GETDATE()
+          WHERE UserId = @userId
+            AND IsActive = 1
+        `);
+
+      return {
+        success: true,
+        message: 'Password berhasil direset'
+      };
+    } catch (error) {
+      logger.error('Reset password failed:', error);
+      return {
+        success: false,
+        errorMessage: 'Gagal mereset password'
+      };
     }
   }
 

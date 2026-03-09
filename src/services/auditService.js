@@ -1,6 +1,7 @@
 const sql = require('mssql');
 const db = require('../database/connection');
 const logger = require('../config/logger');
+const { sanitizeAuditPayload } = require('../utils/auditHelpers');
 
 /**
  * @typedef {Object} AuditLog
@@ -30,6 +31,19 @@ class AuditService {
         ];
     }
 
+    parseAuditJson(value) {
+        if (!value) {
+            return null;
+        }
+
+        try {
+            return sanitizeAuditPayload(JSON.parse(value));
+        } catch (error) {
+            logger.warn('Failed to parse audit json payload', { error: error.message });
+            return null;
+        }
+    }
+
     /**
      * Log an action to the audit trail
      * @param {Object} logData - The audit log data
@@ -51,17 +65,22 @@ class AuditService {
                 throw new Error(`Invalid action type: ${logData.action}. Must be one of: ${this.validActions.join(', ')}`);
             }
 
+            const normalizedUsername = String(logData.username || '').trim() || 'system';
+            const normalizedEntityType = String(logData.entityType || '').trim() || 'System';
+            const sanitizedOldValues = sanitizeAuditPayload(logData.oldValues || null);
+            const sanitizedNewValues = sanitizeAuditPayload(logData.newValues || null);
+
             const pool = await db.getPool();
             
             // Convert objects to JSON strings
-            const oldValuesJson = logData.oldValues ? JSON.stringify(logData.oldValues) : null;
-            const newValuesJson = logData.newValues ? JSON.stringify(logData.newValues) : null;
+            const oldValuesJson = sanitizedOldValues ? JSON.stringify(sanitizedOldValues) : null;
+            const newValuesJson = sanitizedNewValues ? JSON.stringify(sanitizedNewValues) : null;
 
             const result = await pool.request()
                 .input('userId', sql.UniqueIdentifier, logData.userId || null)
-                .input('username', sql.NVarChar(50), logData.username)
+                .input('username', sql.NVarChar(50), normalizedUsername)
                 .input('action', sql.NVarChar(50), logData.action)
-                .input('entityType', sql.NVarChar(100), logData.entityType || null)
+                .input('entityType', sql.NVarChar(100), normalizedEntityType)
                 .input('entityId', sql.UniqueIdentifier, logData.entityId || null)
                 .input('oldValues', sql.NVarChar(sql.MAX), oldValuesJson)
                 .input('newValues', sql.NVarChar(sql.MAX), newValuesJson)
@@ -84,8 +103,8 @@ class AuditService {
             logger.info('Audit log created', {
                 logId: auditLog.LogId,
                 action: logData.action,
-                entityType: logData.entityType,
-                username: logData.username
+                entityType: normalizedEntityType,
+                username: normalizedUsername
             });
 
             return {
@@ -127,6 +146,7 @@ class AuditService {
             userId: userId,
             username: username,
             action: success ? 'Login' : 'LoginFailed',
+            entityType: 'Authentication',
             ipAddress: ipAddress,
             userAgent: userAgent
         });
@@ -145,6 +165,7 @@ class AuditService {
             userId: userId,
             username: username,
             action: 'Logout',
+            entityType: 'Authentication',
             ipAddress: ipAddress,
             userAgent: userAgent
         });
@@ -437,8 +458,10 @@ class AuditService {
             // Parse JSON fields
             const logs = result.recordset.map(log => ({
                 ...log,
-                OldValues: log.OldValues ? JSON.parse(log.OldValues) : null,
-                NewValues: log.NewValues ? JSON.parse(log.NewValues) : null
+                Username: String(log.Username || '').trim() || 'system',
+                EntityType: String(log.EntityType || '').trim() || 'System',
+                OldValues: this.parseAuditJson(log.OldValues),
+                NewValues: this.parseAuditJson(log.NewValues)
             }));
 
             return {
@@ -496,8 +519,10 @@ class AuditService {
             // Parse JSON fields
             const history = result.recordset.map(log => ({
                 ...log,
-                OldValues: log.OldValues ? JSON.parse(log.OldValues) : null,
-                NewValues: log.NewValues ? JSON.parse(log.NewValues) : null
+                Username: String(log.Username || '').trim() || 'system',
+                EntityType: String(log.EntityType || '').trim() || 'System',
+                OldValues: this.parseAuditJson(log.OldValues),
+                NewValues: this.parseAuditJson(log.NewValues)
             }));
 
             return {

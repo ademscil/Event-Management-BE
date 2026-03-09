@@ -10,10 +10,10 @@ const submitResponseValidation = [
     .notEmpty().withMessage('Survey ID is required')
     .isUUID().withMessage('Survey ID must be a valid UUID'),
   body('respondent.email')
-    .notEmpty().withMessage('Email is required')
+    .optional({ values: 'falsy' })
     .isEmail().withMessage('Invalid email format'),
   body('respondent.name')
-    .notEmpty().withMessage('Name is required')
+    .optional({ values: 'falsy' })
     .trim()
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('respondent.businessUnitId')
@@ -153,10 +153,18 @@ async function checkDuplicateResponse(req, res) {
       ? applicationIds.filter(Boolean)
       : (applicationId ? [applicationId] : []);
 
-    if (!surveyId || !email || normalizedApplicationIds.length === 0) {
+    if (!surveyId || normalizedApplicationIds.length === 0) {
       return res.status(400).json({
         error: 'Validation failed',
-        message: 'Survey ID, email, and application ID are required'
+        message: 'Survey ID and application ID are required'
+      });
+    }
+
+    if (!String(email || '').trim()) {
+      return res.json({
+        success: true,
+        isDuplicate: false,
+        message: 'Duplicate check skipped because no email was provided'
       });
     }
 

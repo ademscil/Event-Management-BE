@@ -13,6 +13,22 @@ class MappingService {
     this.appDeptRepo = new BaseRepository('ApplicationDepartmentMappings', 'MappingId');
   }
 
+  async _validateApplicationFunctionOwnership(applicationId, functionId, transaction = null) {
+    const existingMappings = await this.functionAppRepo.findAll(
+      { ApplicationId: applicationId },
+      transaction
+    );
+
+    if (existingMappings.length === 0) {
+      return;
+    }
+
+    const conflictingMapping = existingMappings.find((mapping) => mapping.FunctionId !== functionId);
+    if (conflictingMapping) {
+      throw new Error('Application is already mapped to another Function');
+    }
+  }
+
   // ==================== Function-Application Mapping ====================
 
   /**
@@ -27,6 +43,7 @@ class MappingService {
       // Validate entities exist
       await this._validateFunctionExists(functionId);
       await this._validateApplicationExists(applicationId);
+      await this._validateApplicationFunctionOwnership(applicationId, functionId);
 
       // Check for duplicate
       const existing = await this.functionAppRepo.findAll({
@@ -76,6 +93,7 @@ class MappingService {
         try {
           // Validate application exists
           await this._validateApplicationExists(applicationId, transaction);
+          await this._validateApplicationFunctionOwnership(applicationId, functionId, transaction);
 
           // Check for duplicate
           const existing = await this.functionAppRepo.findAll(

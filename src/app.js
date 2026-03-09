@@ -138,7 +138,8 @@ app.get('/s/:shortCode', async (req, res) => {
     }
 
     const surveyId = result.recordset[0].SurveyId;
-    return res.redirect(`/survey/index?id=${encodeURIComponent(surveyId)}`);
+    const publicSurveyBaseUrl = config.publicSurveyBaseUrl || config.baseUrl || '';
+    return res.redirect(`${publicSurveyBaseUrl}/survey/${encodeURIComponent(surveyId)}`);
   } catch (error) {
     logger.error('Short link redirect error:', error);
     return res.status(500).send('Failed to resolve survey link');

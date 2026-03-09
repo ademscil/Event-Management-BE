@@ -132,6 +132,42 @@ describe('AuditService', () => {
       expect(mockRequest.input).toHaveBeenCalledWith('oldValues', expect.anything(), JSON.stringify(oldValues));
       expect(mockRequest.input).toHaveBeenCalledWith('newValues', expect.anything(), JSON.stringify(newValues));
     });
+
+    it('should redact sensitive values before persisting audit payload', async () => {
+      const mockAuditLog = {
+        LogId: 'test-log-id',
+        Timestamp: new Date(),
+        Action: 'Create',
+        EntityType: 'Authentication'
+      };
+
+      mockRequest.query.mockResolvedValue({
+        recordset: [mockAuditLog]
+      });
+
+      await auditService.logAction({
+        username: 'superadmin',
+        action: 'Create',
+        entityType: 'Authentication',
+        newValues: {
+          username: 'superadmin',
+          password: 'admin123',
+          refreshToken: 'secret-token'
+        },
+        ipAddress: '127.0.0.1',
+        userAgent: 'Test Agent'
+      });
+
+      expect(mockRequest.input).toHaveBeenCalledWith(
+        'newValues',
+        expect.anything(),
+        JSON.stringify({
+          username: 'superadmin',
+          password: '[REDACTED]',
+          refreshToken: '[REDACTED]'
+        })
+      );
+    });
   });
 
   describe('logAuthAttempt', () => {
@@ -156,6 +192,7 @@ describe('AuditService', () => {
 
       expect(result.success).toBe(true);
       expect(mockRequest.input).toHaveBeenCalledWith('action', expect.anything(), 'Login');
+      expect(mockRequest.input).toHaveBeenCalledWith('entityType', expect.anything(), 'Authentication');
     });
 
     it('should log failed login', async () => {
