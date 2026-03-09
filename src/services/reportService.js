@@ -77,9 +77,11 @@ class ReportService {
    * @param {string} request.userRole - User role for authorization
    * @returns {Promise<Object>} Report data
    */
-  async generateReport(request) {
+  async generateReport(request, options = {}) {
     try {
       logger.info(`Generating report for surveyId: ${request.surveyId}`);
+      const persistGeneratedState = options.persistGeneratedState !== false;
+      const requireGeneratedState = options.requireGeneratedState === true;
 
       // Validate survey exists
       const surveyResult = await (await this.createRequest())
@@ -96,6 +98,9 @@ class ReportService {
 
       const survey = surveyResult.recordset[0];
       const currentCycle = await publishCycleService.getCurrentCycle(this.pool, request.surveyId);
+      if (requireGeneratedState && !currentCycle?.GeneratedAt) {
+        throw new ValidationError('Report belum digenerate untuk event ini.');
+      }
       const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
 
       const responseCountRequest = await this.createRequest();
@@ -212,6 +217,7 @@ class ReportService {
           bu.Name as BusinessUnitName,
           d.Name as DivisionName,
           dept.Name as DepartmentName,
+          f.Name as FunctionName,
           a.Name as ApplicationName,
           q.QuestionId,
           q.PromptText,
@@ -231,6 +237,8 @@ class ReportService {
         INNER JOIN Divisions d ON r.DivisionId = d.DivisionId
         INNER JOIN Departments dept ON r.DepartmentId = dept.DepartmentId
         INNER JOIN Applications a ON r.ApplicationId = a.ApplicationId
+        LEFT JOIN FunctionApplicationMappings fam ON fam.ApplicationId = a.ApplicationId
+        LEFT JOIN Functions f ON f.FunctionId = fam.FunctionId
         WHERE ${whereClause}
         ORDER BY r.SubmittedAt DESC, q.DisplayOrder
       `;
@@ -252,7 +260,7 @@ class ReportService {
 
       const distributionResult = await sqlRequest.query(distributionQuery);
 
-      if (currentCycle?.PublishCycleId) {
+      if (persistGeneratedState && currentCycle?.PublishCycleId) {
         await publishCycleService.markGenerated(this.pool, currentCycle.PublishCycleId, request.userId || null);
       }
 
@@ -303,6 +311,19 @@ class ReportService {
   async generateAfterTakeoutReport(request) {
     logger.info(`Generating after takeout report for surveyId: ${request.surveyId}`);
     return await this.generateReport({ ...request, includeTakenOut: false });
+  }
+
+  /**
+   * View a generated report without mutating generated state.
+   * @param {Object} request - Report request parameters
+   * @returns {Promise<Object>} Report data
+   */
+  async viewReport(request) {
+    logger.info(`Viewing generated report for surveyId: ${request.surveyId}`);
+    return await this.generateReport(
+      { ...request, includeTakenOut: request.includeTakenOut ?? false },
+      { persistGeneratedState: false, requireGeneratedState: true }
+    );
   }
 
   /**
@@ -800,7 +821,7 @@ class ReportService {
       logger.info(`Exporting report to Excel for surveyId: ${request.surveyId}`);
 
       // Generate report data
-      const reportData = await this.generateReport(request);
+      const reportData = await this.viewReport(request);
 
       // Create workbook
       const workbook = new ExcelJS.Workbook();
@@ -951,7 +972,7 @@ class ReportService {
       logger.info(`Exporting report to PDF for surveyId: ${request.surveyId}`);
 
       // Generate report data
-      const reportData = await this.generateReport(request);
+      const reportData = await this.viewReport(request);
 
       return new Promise((resolve, reject) => {
         try {

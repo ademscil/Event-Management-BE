@@ -185,6 +185,7 @@ router.get('/responses/survey/:surveyId/statistics', requireAuth, requirePermiss
 
 // Reports
 router.post('/reports/generate', requireAuth, requirePermission('reports:read'), reportController.generateReport);
+router.post('/reports/view', requireAuth, requirePermission('reports:read'), reportController.viewReport);
 router.post('/reports/before-takeout', requireAuth, requirePermission('reports:read'), reportController.generateBeforeTakeoutReport);
 router.post('/reports/after-takeout', requireAuth, requirePermission('reports:read'), reportController.generateAfterTakeoutReport);
 router.get('/reports/selection-list', requireAuth, requirePermission('reports:read'), reportController.getReportSelectionList);
