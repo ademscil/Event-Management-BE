@@ -270,6 +270,87 @@ async function getRespondents(req, res) {
   }
 }
 
+async function approveInitialResponses(req, res) {
+  try {
+    const { responseIds, reason } = req.body;
+    const approvedBy = req.user?.userId;
+
+    if (!Array.isArray(responseIds) || responseIds.length === 0) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Minimal satu response wajib dipilih'
+      });
+    }
+
+    const result = await approvalService.approveInitialResponses(responseIds, approvedBy, reason || null);
+    res.json({
+      success: true,
+      message: 'Response berhasil di-approve oleh Admin Event',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Approve initial responses controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message || 'An error occurred while approving responses'
+    });
+  }
+}
+
+async function rejectInitialResponses(req, res) {
+  try {
+    const { responseIds, reason } = req.body;
+    const rejectedBy = req.user?.userId;
+
+    if (!Array.isArray(responseIds) || responseIds.length === 0 || !reason) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Minimal satu response dan alasan reject wajib diisi'
+      });
+    }
+
+    const result = await approvalService.rejectInitialResponses(responseIds, rejectedBy, reason);
+    res.json({
+      success: true,
+      message: 'Response berhasil di-reject oleh Admin Event',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Reject initial responses controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message || 'An error occurred while rejecting responses'
+    });
+  }
+}
+
+async function approveFinalResponses(req, res) {
+  try {
+    const { responseIds, reason } = req.body;
+    const approvedBy = req.user?.userId;
+
+    if (!Array.isArray(responseIds) || responseIds.length === 0) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Minimal satu response wajib dipilih'
+      });
+    }
+
+    const result = await approvalService.approveFinalResponses(responseIds, approvedBy, reason || null);
+    res.json({
+      success: true,
+      message: 'Response berhasil di-approve final oleh IT Lead',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Approve final responses controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: error.message || 'An error occurred while approving final responses'
+    });
+  }
+}
+
 /**
  * Get comments list for best comment selection
  * GET /api/v1/approvals/comments
@@ -537,6 +618,9 @@ module.exports = {
   rejectProposedTakeout,
   getPendingApprovals,
   getRespondents,
+  approveInitialResponses,
+  rejectInitialResponses,
+  approveFinalResponses,
   getProposedTakeouts,
   getCommentsForSelection,
   markAsBestComment,

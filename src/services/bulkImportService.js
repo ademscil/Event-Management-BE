@@ -7,6 +7,7 @@ const { DivisionService } = require('./divisionService');
 const { DepartmentService } = require('./departmentService');
 const { FunctionService } = require('./functionService');
 const { ApplicationService } = require('./applicationService');
+const { hashPasswordLegacy } = require('../utils/passwordHash');
 
 /**
  * Bulk Import Service for batch processing of master data
@@ -330,6 +331,19 @@ class BulkImportService {
    * @private
    */
   async _importFunction(data, request, options) {
+    let deptId = null;
+    if (data.departmentCode) {
+      const deptResult = await request
+        .input('deptCode', sql.NVarChar(20), data.departmentCode)
+        .query('SELECT DepartmentId FROM Departments WHERE Code = @deptCode');
+
+      if (deptResult.recordset.length === 0) {
+        throw new Error(`Department with code '${data.departmentCode}' not found`);
+      }
+
+      deptId = deptResult.recordset[0].DepartmentId;
+    }
+
     // Check if exists
     const existing = await request
       .input('code', sql.NVarChar(20), data.code)
@@ -340,9 +354,12 @@ class BulkImportService {
         // Update existing
         await request
           .input('name', sql.NVarChar(200), data.name)
+          .input('deptId', sql.UniqueIdentifier, deptId)
           .query(`
             UPDATE Functions
-            SET Name = @name, UpdatedAt = GETDATE()
+            SET Name = @name,
+                DeptId = @deptId,
+                UpdatedAt = GETDATE()
             WHERE Code = @code
           `);
         return { action: 'updated' };
@@ -356,9 +373,10 @@ class BulkImportService {
     // Insert new
     await request
       .input('name', sql.NVarChar(200), data.name)
+      .input('deptId', sql.UniqueIdentifier, deptId)
       .query(`
-        INSERT INTO Functions (Code, Name, IsActive, CreatedAt)
-        VALUES (@code, @name, 1, GETDATE())
+        INSERT INTO Functions (Code, Name, DeptId, IsActive, CreatedAt)
+        VALUES (@code, @name, @deptId, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -432,6 +450,22 @@ class BulkImportService {
 
     const applicationId = appResult.recordset[0].ApplicationId;
 
+    const ownershipCheck = await request
+      .input('ownershipApplicationId', sql.UniqueIdentifier, applicationId)
+      .query(`
+        SELECT TOP 1 fam.MappingId, f.Code AS FunctionCode
+        FROM FunctionApplicationMappings fam
+        INNER JOIN Functions f ON fam.FunctionId = f.FunctionId
+        WHERE fam.ApplicationId = @ownershipApplicationId
+      `);
+
+    if (ownershipCheck.recordset.length > 0) {
+      const existingOwner = ownershipCheck.recordset[0];
+      if (existingOwner.FunctionCode !== data.functionCode) {
+        throw new Error(`Application '${data.applicationCode}' is already mapped to Function '${existingOwner.FunctionCode}'`);
+      }
+    }
+
     // Check if mapping exists
     const existing = await request
       .input('functionId', sql.UniqueIdentifier, functionId)
@@ -463,8 +497,6 @@ class BulkImportService {
    * @private
    */
   async _importUser(data, request, options) {
-    const bcrypt = require('bcrypt');
-    
     const existing = await request
       .input('username', sql.NVarChar(50), data.username)
       .query('SELECT UserId FROM Users WHERE Username = @username');
@@ -482,20 +514,21 @@ class BulkImportService {
     let passwordHash = null;
 
     if (!useLdap && data.password) {
-      passwordHash = await bcrypt.hash(data.password, 10);
+      passwordHash = hashPasswordLegacy(data.password);
     }
 
     await request
       .input('npk', sql.NVarChar(50), data.npk || null)
       .input('displayName', sql.NVarChar(200), data.displayName)
       .input('email', sql.NVarChar(200), data.email)
+      .input('phoneNumber', sql.NVarChar(30), data.phoneNumber || null)
       .input('role', sql.NVarChar(50), data.role)
       .input('useLdap', sql.Bit, useLdap)
       .input('isActive', sql.Bit, isActive)
       .input('passwordHash', sql.NVarChar(255), passwordHash)
       .query(`
-        INSERT INTO Users (Username, NPK, DisplayName, Email, Role, UseLDAP, IsActive, PasswordHash, CreatedAt)
-        VALUES (@username, @npk, @displayName, @email, @role, @useLdap, @isActive, @passwordHash, GETDATE())
+        INSERT INTO Users (Username, NPK, DisplayName, Email, PhoneNumber, Role, UseLDAP, IsActive, PasswordHash, CreatedAt)
+        VALUES (@username, @npk, @displayName, @email, @phoneNumber, @role, @useLdap, @isActive, @passwordHash, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -589,7 +622,8 @@ class BulkImportService {
         entityType: 'Function',
         columnMapping: {
           'Code': 'code',
-          'Name': 'name'
+          'Name': 'name',
+          'Department Code': 'departmentCode'
         }
       },
       Application: {
@@ -621,6 +655,7 @@ class BulkImportService {
           'NPK': 'npk',
           'DisplayName': 'displayName',
           'Email': 'email',
+          'PhoneNumber': 'phoneNumber',
           'Role': 'role',
           'IsActive': 'isActive',
           'UseLDAP': 'useLdap',

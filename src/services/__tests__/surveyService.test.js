@@ -41,6 +41,26 @@ describe('SurveyService', () => {
     jest.clearAllMocks();
   });
 
+  describe('publish window validation', () => {
+    it('should reject publish when end datetime is already in the past', () => {
+      const startDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const endDate = new Date(Date.now() - 60 * 1000);
+
+      expect(() => surveyService.validatePublishWindow('Active', startDate, endDate))
+        .toThrow(ValidationError);
+      expect(() => surveyService.validatePublishWindow('Active', startDate, endDate))
+        .toThrow('Survey tidak bisa dipublish karena periode sudah berakhir');
+    });
+
+    it('should allow draft even when the saved end datetime has passed', () => {
+      const startDate = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      const endDate = new Date(Date.now() - 60 * 1000);
+
+      expect(() => surveyService.validatePublishWindow('Draft', startDate, endDate))
+        .not.toThrow();
+    });
+  });
+
   describe('createSurvey', () => {
     const validSurveyData = {
       title: 'Customer Satisfaction Survey 2024',
@@ -621,21 +641,15 @@ describe('SurveyService', () => {
         .rejects.toThrow('Question type is required');
     });
 
-    it('should allow promptText to be empty', async () => {
-      const invalidData = { ...validQuestionData, promptText: '' };
-      const createdQuestion = {
-        QuestionId: '44444444-4444-4444-4444-444444444444',
-        SurveyId: surveyId,
-        Type: validQuestionData.type,
-        PromptText: ''
-      };
+    it('should allow empty promptText when title is intentionally blank', async () => {
+      const blankPromptData = { ...validQuestionData, promptText: '' };
 
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ SurveyId: surveyId, Status: 'Draft' }] })
         .mockResolvedValueOnce({ recordset: [{ NextOrder: 1 }] })
-        .mockResolvedValueOnce({ recordset: [createdQuestion] });
+        .mockResolvedValueOnce({ recordset: [{ QuestionId: '33333333-3333-3333-3333-333333333333', PromptText: '', Options: null }] });
 
-      const result = await surveyService.addQuestion(surveyId, invalidData);
+      const result = await surveyService.addQuestion(surveyId, blankPromptData);
 
       expect(result.PromptText).toBe('');
     });
@@ -727,16 +741,14 @@ describe('SurveyService', () => {
         .resolves.toBeDefined();
     });
 
-    it('should allow promptText to be updated to an empty string', async () => {
+    it('should allow updating promptText to empty string', async () => {
       const testRequest1 = {
         input: jest.fn().mockReturnThis(),
         query: jest.fn().mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
       };
       const testRequest2 = {
         input: jest.fn().mockReturnThis(),
-        query: jest.fn().mockResolvedValueOnce({
-          recordset: [{ QuestionId: questionId, SurveyId: surveyId, PromptText: '', Options: null }]
-        })
+        query: jest.fn().mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, PromptText: '', Options: null }] })
       };
       mockPool.request = jest.fn()
         .mockReturnValueOnce(testRequest1)

@@ -115,14 +115,30 @@ class EmailService {
             // Render template
             const html = await this.renderTemplate(template, data);
 
-            // Send email
-            const info = await this.transporter.sendMail({
+            const normalizedEmailType = this.normalizeEmailType(emailType);
+            const mailOptions = {
                 from: process.env.SMTP_FROM,
                 to,
                 subject,
                 html,
                 attachments
-            });
+            };
+
+            // Send email with a single retry for transient SMTP socket failures.
+            let info;
+            try {
+                info = await this.transporter.sendMail(mailOptions);
+            } catch (error) {
+                if (!this.isTransientEmailError(error)) {
+                    throw error;
+                }
+
+                logger.warn(`Transient email error detected for ${to}, retrying once`, {
+                    code: error.code,
+                    syscall: error.syscall
+                });
+                info = await this.transporter.sendMail(mailOptions);
+            }
 
             // Log email
             await this.logEmail({
@@ -130,7 +146,7 @@ class EmailService {
                 recipientEmail: to,
                 recipientName: data.recipientName || null,
                 subject,
-                emailType,
+                emailType: normalizedEmailType,
                 status: 'Sent',
                 errorMessage: null
             });
@@ -150,7 +166,7 @@ class EmailService {
                 recipientEmail: to,
                 recipientName: data.recipientName || null,
                 subject,
-                emailType,
+                emailType: this.normalizeEmailType(emailType),
                 status: 'Failed',
                 errorMessage: error.message
             });
@@ -160,6 +176,20 @@ class EmailService {
                 error: error.message
             };
         }
+    }
+
+    normalizeEmailType(emailType) {
+        const normalized = String(emailType || '').trim();
+        if (normalized === 'Blast' || normalized === 'Reminder' || normalized === 'Notification') {
+            return normalized;
+        }
+
+        return 'Notification';
+    }
+
+    isTransientEmailError(error) {
+        const code = String(error?.code || '').toUpperCase();
+        return code === 'ECONNRESET' || code === 'ESOCKET' || code === 'ETIMEDOUT' || code === 'ECONNECTION';
     }
 
     /**
@@ -636,7 +666,8 @@ class EmailService {
 
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
-            const surveyLink = survey.SurveyLink || `${process.env.BASE_URL}/survey/index.html?id=${surveyId}`;
+            const publicSurveyBaseUrl = process.env.PUBLIC_SURVEY_BASE_URL || process.env.BASE_URL;
+            const surveyLink = survey.SurveyLink || `${publicSurveyBaseUrl}/survey/${surveyId}`;
             let qrCodeDataUrl = null;
             if (includeQrCode) {
                 qrCodeDataUrl = survey.QRCodeDataUrl || await QRCode.toDataURL(surveyLink, {
@@ -874,7 +905,7 @@ class EmailService {
                 data: {
                     recipientName: recipient.name,
                     surveyTitle: survey.Title,
-                    surveyLink: survey.SurveyLink || `${process.env.BASE_URL}/survey/index.html?id=${surveyId}`,
+                    surveyLink: survey.SurveyLink || `${process.env.PUBLIC_SURVEY_BASE_URL || process.env.BASE_URL}/survey/${surveyId}`,
                     endDate: endDate.toLocaleDateString('id-ID'),
                     daysRemaining,
                     customMessage,

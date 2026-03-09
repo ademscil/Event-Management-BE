@@ -15,6 +15,8 @@ const { auditAuthMiddleware, auditLogoutMiddleware } = require('../middleware/au
  * @access  Public
  */
 router.post('/login', auditAuthMiddleware, authController.loginValidation, authController.login);
+router.post('/forgot-password', authController.forgotPasswordValidation, authController.forgotPassword);
+router.post('/reset-password', authController.resetPasswordValidation, authController.resetPassword);
 
 /**
  * @route   POST /api/auth/logout

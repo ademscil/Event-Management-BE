@@ -23,19 +23,66 @@ function createServer() {
 }
 
 /**
+ * Delay helper
+ */
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+let scheduledProcessorStarted = false;
+
+async function verifyDatabaseWithRetry() {
+  const retryEnabled = config.startup?.dbRetryEnabled !== false;
+  const retryIntervalMs = config.startup?.dbRetryIntervalMs || 5000;
+  const maxAttempts = Number(config.startup?.dbRetryMaxAttempts || 0);
+  let attempt = 0;
+
+  while (true) {
+    attempt += 1;
+    try {
+      await db.getPool();
+      logger.info('Database connection verified');
+      return;
+    } catch (error) {
+      logger.error('Database verification failed on startup', {
+        attempt,
+        retryEnabled,
+        maxAttempts,
+        message: error.message,
+      });
+
+      if (!retryEnabled || (maxAttempts > 0 && attempt >= maxAttempts)) {
+        throw error;
+      }
+
+      logger.warn(`Retrying database connection in ${retryIntervalMs}ms...`);
+      await wait(retryIntervalMs);
+    }
+  }
+}
+
+function ensureScheduledProcessorStarted() {
+  if (scheduledProcessorStarted) {
+    return;
+  }
+
+  scheduledOperationsProcessor.start();
+  scheduledProcessorStarted = true;
+  logger.info('Scheduled operations processor initialized');
+
+  scheduledOperationsProcessor.triggerProcessing().catch((error) => {
+    logger.error('Initial scheduled operations trigger failed:', error);
+  });
+}
+
+/**
  * Start server
  */
 async function startServer() {
   try {
-    // Test database connection
-    await db.getPool();
-    logger.info('Database connection verified');
-
-    // Create server (HTTP or HTTPS)
     const server = createServer();
 
-    // Start listening
-    server.listen(config.port, () => {
+    server.listen(config.port, async () => {
       const protocol = config.https.enabled ? 'https' : 'http';
       logger.info(`CSI Portal API server running on port ${config.port}`);
       logger.info(`Environment: ${config.env}`);
@@ -43,18 +90,21 @@ async function startServer() {
       logger.info(`Base URL: ${config.baseUrl}`);
       logger.info(`Admin Panel: ${protocol}://localhost:${config.port}/admin/login`);
       logger.info(`API Endpoint: ${protocol}://localhost:${config.port}/api/v1`);
+
+      try {
+        await verifyDatabaseWithRetry();
+        ensureScheduledProcessorStarted();
+      } catch (error) {
+        logger.error('Server started without active database connectivity', {
+          message: error.message,
+        });
+
+        if (config.env !== 'development') {
+          process.exit(1);
+        }
+      }
     });
 
-    // Start scheduled blast/reminder processor
-    scheduledOperationsProcessor.start();
-    logger.info('Scheduled operations processor initialized');
-
-    // Run once on startup to catch overdue pending items immediately
-    scheduledOperationsProcessor.triggerProcessing().catch((error) => {
-      logger.error('Initial scheduled operations trigger failed:', error);
-    });
-
-    // Handle server errors
     server.on('error', (error) => {
       if (error.code === 'EADDRINUSE') {
         logger.error(`Port ${config.port} is already in use`);

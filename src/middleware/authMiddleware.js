@@ -42,12 +42,15 @@ const PERMISSIONS = {
 
   // Response Management
   'responses:read': [ROLES.ADMIN_EVENT, ROLES.IT_LEAD, ROLES.DEPARTMENT_HEAD],
-  'responses:propose-takeout': [ROLES.ADMIN_EVENT],
+  'responses:approve-initial': [ROLES.ADMIN_EVENT],
+  'responses:reject-initial': [ROLES.ADMIN_EVENT],
+  'responses:propose-takeout': [ROLES.IT_LEAD],
+  'responses:approve-final': [ROLES.IT_LEAD],
 
   // Approval Management
   'approvals:read': [ROLES.ADMIN_EVENT, ROLES.IT_LEAD],
-  'approvals:approve': [ROLES.IT_LEAD],
-  'approvals:reject': [ROLES.IT_LEAD],
+  'approvals:approve': [ROLES.ADMIN_EVENT],
+  'approvals:reject': [ROLES.ADMIN_EVENT],
 
   // Best Comments
   'best-comments:read': [ROLES.ADMIN_EVENT, ROLES.IT_LEAD, ROLES.DEPARTMENT_HEAD],

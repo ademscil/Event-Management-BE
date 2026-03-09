@@ -36,11 +36,31 @@ class UnauthorizedError extends Error {
 class ReportService {
   constructor() {
     this.pool = pool;
+    this.responsesHasApprovalStatus = null;
   }
 
   async createRequest() {
     const dbPool = await this.pool.getPool();
     return dbPool.request();
+  }
+
+  async hasResponseApprovalStatusColumn() {
+    if (typeof this.responsesHasApprovalStatus === 'boolean') {
+      return this.responsesHasApprovalStatus;
+    }
+
+    const result = await (await this.createRequest())
+      .input('tableName', sql.NVarChar(128), 'Responses')
+      .input('columnName', sql.NVarChar(128), 'ResponseApprovalStatus')
+      .query(`
+        SELECT COUNT(1) AS Cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = @tableName
+          AND COLUMN_NAME = @columnName
+      `);
+
+    this.responsesHasApprovalStatus = Number(result.recordset?.[0]?.Cnt || 0) > 0;
+    return this.responsesHasApprovalStatus;
   }
 
   /**
@@ -76,6 +96,7 @@ class ReportService {
 
       const survey = surveyResult.recordset[0];
       const currentCycle = await publishCycleService.getCurrentCycle(this.pool, request.surveyId);
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
 
       const responseCountRequest = await this.createRequest();
       responseCountRequest.input('surveyId', sql.UniqueIdentifier, request.surveyId);
@@ -84,6 +105,9 @@ class ReportService {
           FROM Responses
           WHERE SurveyId = @surveyId
         `;
+      if (hasApprovalStatus) {
+        responseCountQuery += ` AND ResponseApprovalStatus = 'ApprovedFinal'`;
+      }
       if (currentCycle?.PublishCycleId) {
         responseCountQuery += ' AND PublishCycleId = @publishCycleId';
         responseCountRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
@@ -133,6 +157,10 @@ class ReportService {
       if (currentCycle?.PublishCycleId) {
         filterConditions.push('r.PublishCycleId = @publishCycleId');
         sqlRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
+      }
+
+      if (hasApprovalStatus) {
+        filterConditions.push(`r.ResponseApprovalStatus = 'ApprovedFinal'`);
       }
 
       // Apply function filter through application mapping
@@ -292,6 +320,7 @@ class ReportService {
 
       const sqlRequest = (await this.createRequest());
       let roleFilter = '';
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
       if (isAdminEvent && userId) {
         sqlRequest.input('adminUserId', sql.UniqueIdentifier, userId);
         roleFilter = `
@@ -328,7 +357,10 @@ class ReportService {
               s.Description,
               s.StartDate,
               s.EndDate,
-              s.Status,
+              CASE
+                WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+                ELSE s.Status
+              END as Status,
               CONCAT(
                 FORMAT(s.StartDate, 'dd MMM yyyy'), 
                 ' - ', 
@@ -352,6 +384,7 @@ class ReportService {
                 cc.PublishCycleId IS NULL
                 OR r.PublishCycleId = cc.PublishCycleId
              )
+             ${hasApprovalStatus ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
             WHERE 1 = 1
             ${roleFilter}
             GROUP BY 
@@ -373,7 +406,10 @@ class ReportService {
               s.Description,
               s.StartDate,
               s.EndDate,
-              s.Status,
+              CASE
+                WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+                ELSE s.Status
+              END as Status,
               CONCAT(
                 FORMAT(s.StartDate, 'dd MMM yyyy'), 
                 ' - ', 
@@ -389,6 +425,7 @@ class ReportService {
               CAST(NULL AS DATETIME2) as GeneratedAt
             FROM Surveys s
             LEFT JOIN Responses r ON s.SurveyId = r.SurveyId
+              ${hasApprovalStatus ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
             WHERE 1 = 1
             ${roleFilter}
             GROUP BY 
@@ -435,6 +472,7 @@ class ReportService {
       const sqlRequest = (await this.createRequest());
       sqlRequest.input('surveyId', sql.UniqueIdentifier, surveyId);
       const currentCycle = await publishCycleService.getCurrentCycle(this.pool, surveyId);
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
 
       let functionFilter = '';
       if (functionId) {
@@ -478,6 +516,7 @@ class ReportService {
         LEFT JOIN QuestionResponses qr ON q.QuestionId = qr.QuestionId
         LEFT JOIN Responses r ON qr.ResponseId = r.ResponseId
         WHERE q.SurveyId = @surveyId
+        ${hasApprovalStatus ? "AND (r.ResponseApprovalStatus = 'ApprovedFinal' OR r.ResponseId IS NULL)" : ''}
         ${functionFilter}
         ${cycleFilter}
         GROUP BY q.QuestionId, q.PromptText, q.Type, q.DisplayOrder
@@ -546,6 +585,7 @@ class ReportService {
         WHERE qr.IsBestComment = 1
         AND r.DepartmentId = @departmentId
         AND s.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         ORDER BY bcf.CreatedAt DESC
       `;
 
@@ -607,6 +647,7 @@ class ReportService {
         INNER JOIN Surveys s ON q.SurveyId = s.SurveyId
         WHERE r.DepartmentId = @departmentId
         AND s.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         AND qr.NumericValue IS NOT NULL
         AND qr.TakeoutStatus != 'TakenOut'
         GROUP BY f.FunctionId, f.Name, s.TargetScore
@@ -665,6 +706,7 @@ class ReportService {
         WHERE qr.TakeoutStatus = 'TakenOut'
         AND r.DepartmentId = @departmentId
         AND q.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         ORDER BY qr.ReviewedAt DESC
       `;
 

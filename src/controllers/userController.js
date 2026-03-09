@@ -20,6 +20,10 @@ const createUserValidation = [
     .trim()
     .notEmpty().withMessage('Email is required')
     .isEmail().withMessage('Invalid email format'),
+  body('phoneNumber')
+    .optional({ nullable: true })
+    .trim()
+    .matches(/^[0-9+\-\s()]{8,20}$/).withMessage('Invalid phone number format'),
   body('role')
     .notEmpty().withMessage('Role is required')
     .isIn(['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead']).withMessage('Invalid role'),
@@ -65,6 +69,10 @@ const updateUserValidation = [
     .optional()
     .trim()
     .isEmail().withMessage('Invalid email format'),
+  body('phoneNumber')
+    .optional({ nullable: true })
+    .trim()
+    .matches(/^[0-9+\-\s()]{8,20}$/).withMessage('Invalid phone number format'),
   body('role')
     .optional()
     .isIn(['SuperAdmin', 'AdminEvent', 'ITLead', 'DepartmentHead']).withMessage('Invalid role'),
@@ -350,6 +358,7 @@ async function downloadUserTemplate(req, res) {
       { header: 'NPK', key: 'npk', width: 15 },
       { header: 'DisplayName', key: 'displayName', width: 28 },
       { header: 'Email', key: 'email', width: 32 },
+      { header: 'PhoneNumber', key: 'phoneNumber', width: 18 },
       { header: 'Role', key: 'role', width: 18 },
       { header: 'IsActive', key: 'isActive', width: 12 },
       { header: 'UseLDAP', key: 'useLdap', width: 12 },
@@ -361,6 +370,7 @@ async function downloadUserTemplate(req, res) {
       npk: '0676',
       displayName: 'Firman',
       email: 'firman@company.co.id',
+      phoneNumber: '6281234567001',
       role: 'AdminEvent',
       isActive: 'true',
       useLdap: 'false',
@@ -372,6 +382,7 @@ async function downloadUserTemplate(req, res) {
       npk: '0677',
       displayName: 'Budi Santoso',
       email: 'budi@company.co.id',
+      phoneNumber: '6281234567002',
       role: 'ITLead',
       isActive: 'true',
       useLdap: 'false',
@@ -383,6 +394,7 @@ async function downloadUserTemplate(req, res) {
       npk: '0678',
       displayName: 'Siti Nurhaliza',
       email: 'siti@company.co.id',
+      phoneNumber: '6281234567003',
       role: 'DepartmentHead',
       isActive: 'true',
       useLdap: 'false',
@@ -421,6 +433,7 @@ async function downloadUserList(req, res) {
       { header: 'NPK', key: 'npk', width: 15 },
       { header: 'DisplayName', key: 'displayName', width: 28 },
       { header: 'Email', key: 'email', width: 32 },
+      { header: 'PhoneNumber', key: 'phoneNumber', width: 18 },
       { header: 'Role', key: 'role', width: 18 },
       { header: 'Business Unit', key: 'businessUnit', width: 25 },
       { header: 'Division', key: 'division', width: 25 },
@@ -435,6 +448,7 @@ async function downloadUserList(req, res) {
         npk: user.NPK || '',
         displayName: user.DisplayName,
         email: user.Email,
+        phoneNumber: user.PhoneNumber || '',
         role: user.Role,
         businessUnit: user.BusinessUnitName || '',
         division: user.DivisionName || '',

@@ -37,6 +37,7 @@ class ResponseService {
     this.pool = pool;
     this.questionResponsesHasApplicationId = null;
     this.questionResponsesHasTakeoutStatus = null;
+    this.responsesHasApprovalStatus = null;
   }
 
   async createRequest() {
@@ -85,6 +86,25 @@ class ResponseService {
     return this.questionResponsesHasTakeoutStatus;
   }
 
+  async hasResponseApprovalStatusColumn() {
+    if (typeof this.responsesHasApprovalStatus === 'boolean') {
+      return this.responsesHasApprovalStatus;
+    }
+
+    const result = await (await this.createRequest())
+      .input('tableName', sql.NVarChar(128), 'Responses')
+      .input('columnName', sql.NVarChar(128), 'ResponseApprovalStatus')
+      .query(`
+        SELECT COUNT(1) AS Cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = @tableName
+          AND COLUMN_NAME = @columnName
+      `);
+
+    this.responsesHasApprovalStatus = Number(result.recordset?.[0]?.Cnt || 0) > 0;
+    return this.responsesHasApprovalStatus;
+  }
+
   /**
    * Get survey form with configuration and questions
    * @param {string} surveyId - Survey ID
@@ -108,11 +128,16 @@ class ResponseService {
             s.TargetRespondents,
             s.TargetScore,
             s.DuplicatePreventionEnabled,
+            sc.HeroTitle,
+            sc.HeroSubtitle,
             sc.HeroImageUrl,
             sc.LogoUrl,
             sc.BackgroundImageUrl,
             sc.BackgroundColor,
+            sc.PrimaryColor,
+            sc.SecondaryColor,
             sc.FontFamily,
+            sc.ButtonStyle,
             sc.ShowProgressBar,
             sc.ShowPageNumbers,
             sc.MultiPage
@@ -184,11 +209,16 @@ class ResponseService {
         targetScore: survey.TargetScore,
         duplicatePreventionEnabled: survey.DuplicatePreventionEnabled,
         configuration: {
+          heroTitle: survey.HeroTitle,
+          heroSubtitle: survey.HeroSubtitle,
           heroImageUrl: survey.HeroImageUrl,
           logoUrl: survey.LogoUrl,
           backgroundImageUrl: survey.BackgroundImageUrl,
           backgroundColor: survey.BackgroundColor,
+          primaryColor: survey.PrimaryColor,
+          secondaryColor: survey.SecondaryColor,
           fontFamily: survey.FontFamily,
+          buttonStyle: survey.ButtonStyle,
           showProgressBar: survey.ShowProgressBar,
           showPageNumbers: survey.ShowPageNumbers,
           multiPage: survey.MultiPage
@@ -290,6 +320,17 @@ class ResponseService {
     if (!respondent) {
       throw new ValidationError('Respondent information is required');
     }
+  }
+
+  normalizeRespondent(respondent) {
+    const safeName = String(respondent?.name || '').trim().slice(0, 200) || 'Respondent';
+    const rawEmail = String(respondent?.email || '').trim().toLowerCase();
+
+    return {
+      ...respondent,
+      name: safeName,
+      email: rawEmail || null
+    };
   }
 
   /**
@@ -567,6 +608,8 @@ class ResponseService {
         throw new ValidationError('Survey responses are required');
       }
 
+      request.respondent = this.normalizeRespondent(request.respondent);
+
       // Validate organizational selections
       this.validateOrganizationalSelections(request.respondent);
 
@@ -580,7 +623,7 @@ class ResponseService {
       this.validateMandatoryQuestions(survey.questions, request.responses);
 
       // Check for duplicates if enabled
-      if (survey.duplicatePreventionEnabled) {
+      if (survey.duplicatePreventionEnabled && request.respondent.email) {
         for (const applicationId of request.selectedApplicationIds) {
           const isDuplicate = await this.checkDuplicateResponse(
             request.surveyId,
@@ -600,6 +643,7 @@ class ResponseService {
 
       await transaction.begin();
       const hasQuestionResponseApplicationId = await this.hasQuestionResponseApplicationIdColumn();
+      const hasResponseApprovalStatus = await this.hasResponseApprovalStatusColumn();
       const publishCycle = await publishCycleService.ensureCurrentCycle(transaction, request.surveyId);
 
       // Create responses for each selected application
@@ -622,7 +666,24 @@ class ResponseService {
           .input('ipAddress', sql.NVarChar(50), ipAddress);
 
         let responseResult;
-        if (publishCycle?.PublishCycleId) {
+        if (publishCycle?.PublishCycleId && hasResponseApprovalStatus) {
+          responseResult = await responseInsertRequest
+            .input('publishCycleId', sql.UniqueIdentifier, publishCycle.PublishCycleId)
+            .input('responseApprovalStatus', sql.NVarChar(50), 'Submitted')
+            .query(`
+              INSERT INTO Responses (
+                ResponseId, SurveyId, PublishCycleId, RespondentName, RespondentEmail,
+                BusinessUnitId, DivisionId, DepartmentId, ApplicationId,
+                SubmittedAt, IpAddress, ResponseApprovalStatus
+              )
+              OUTPUT INSERTED.ResponseId
+              VALUES (
+                @responseId, @surveyId, @publishCycleId, @respondentName, @respondentEmail,
+                @businessUnitId, @divisionId, @departmentId, @applicationId,
+                @submittedAt, @ipAddress, @responseApprovalStatus
+              )
+            `);
+        } else if (publishCycle?.PublishCycleId) {
           responseResult = await responseInsertRequest
             .input('publishCycleId', sql.UniqueIdentifier, publishCycle.PublishCycleId)
             .query(`
@@ -636,6 +697,22 @@ class ResponseService {
                 @responseId, @surveyId, @publishCycleId, @respondentName, @respondentEmail,
                 @businessUnitId, @divisionId, @departmentId, @applicationId,
                 @submittedAt, @ipAddress
+              )
+            `);
+        } else if (hasResponseApprovalStatus) {
+          responseResult = await responseInsertRequest
+            .input('responseApprovalStatus', sql.NVarChar(50), 'Submitted')
+            .query(`
+              INSERT INTO Responses (
+                ResponseId, SurveyId, RespondentName, RespondentEmail,
+                BusinessUnitId, DivisionId, DepartmentId, ApplicationId,
+                SubmittedAt, IpAddress, ResponseApprovalStatus
+              )
+              OUTPUT INSERTED.ResponseId
+              VALUES (
+                @responseId, @surveyId, @respondentName, @respondentEmail,
+                @businessUnitId, @divisionId, @departmentId, @applicationId,
+                @submittedAt, @ipAddress, @responseApprovalStatus
               )
             `);
         } else {

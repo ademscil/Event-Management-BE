@@ -1,5 +1,6 @@
 const auditService = require('../services/auditService');
 const logger = require('../config/logger');
+const { sanitizeAuditPayload } = require('../utils/auditHelpers');
 
 /**
  * Extract IP address from request
@@ -30,17 +31,23 @@ function getUserAgent(req) {
  */
 function getEntityTypeFromPath(path) {
     const pathMap = {
+        '/auth': 'Authentication',
         '/users': 'User',
         '/business-units': 'BusinessUnit',
         '/divisions': 'Division',
         '/departments': 'Department',
         '/functions': 'Function',
         '/applications': 'Application',
-        '/surveys': 'Survey',
+        '/events': 'Event',
+        '/surveys': 'Event',
+        '/event-types': 'EventType',
         '/questions': 'Question',
         '/responses': 'Response',
         '/mappings': 'Mapping',
-        '/approvals': 'Approval'
+        '/approvals': 'Approval',
+        '/reports': 'Report',
+        '/operations': 'Operation',
+        '/audit': 'AuditLog'
     };
 
     for (const [key, value] of Object.entries(pathMap)) {
@@ -49,7 +56,20 @@ function getEntityTypeFromPath(path) {
         }
     }
 
-    return 'Unknown';
+    const apiPrefix = '/api/v1/';
+    const normalizedPath = String(path || '');
+    const pathWithoutPrefix = normalizedPath.startsWith(apiPrefix)
+      ? normalizedPath.slice(apiPrefix.length)
+      : normalizedPath.replace(/^\/+/, '');
+    const firstSegment = pathWithoutPrefix.split('/').find(Boolean);
+    if (firstSegment) {
+      return firstSegment
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('');
+    }
+
+    return 'System';
 }
 
 /**
@@ -78,6 +98,9 @@ const auditLoggerMiddleware = (options = {}) => {
     return async (req, res, next) => {
         // Skip audit logging for certain paths
         const skipPaths = options.skipPaths || [
+            '/api/v1/auth/login',
+            '/api/v1/auth/logout',
+            '/api/v1/auth/refresh',
             '/api/v1/auth/validate',
             '/api/v1/health',
             '/api/v1/audit' // Don't log audit log queries
@@ -104,7 +127,7 @@ const auditLoggerMiddleware = (options = {}) => {
             if (res.statusCode >= 200 && res.statusCode < 300) {
                 // Extract user info from request (set by auth middleware)
                 const userId = req.user?.userId || null;
-                const username = req.user?.username || 'anonymous';
+                const username = String(req.user?.username || req.user?.displayName || '').trim() || 'system';
 
                 // Determine entity type and action
                 const entityType = getEntityTypeFromPath(req.path);
@@ -133,12 +156,12 @@ const auditLoggerMiddleware = (options = {}) => {
 
                 // Add old/new values for updates
                 if (action === 'Create') {
-                    auditData.newValues = req.body;
+                    auditData.newValues = sanitizeAuditPayload(req.body);
                 } else if (action === 'Update') {
-                    auditData.oldValues = req.originalData || null; // Set by controller if available
-                    auditData.newValues = req.body;
+                    auditData.oldValues = sanitizeAuditPayload(req.originalData || null); // Set by controller if available
+                    auditData.newValues = sanitizeAuditPayload(req.body);
                 } else if (action === 'Delete') {
-                    auditData.oldValues = req.originalData || null; // Set by controller if available
+                    auditData.oldValues = sanitizeAuditPayload(req.originalData || null); // Set by controller if available
                 }
 
                 // Log asynchronously without blocking response
