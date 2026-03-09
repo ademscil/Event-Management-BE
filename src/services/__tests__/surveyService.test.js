@@ -621,13 +621,23 @@ describe('SurveyService', () => {
         .rejects.toThrow('Question type is required');
     });
 
-    it('should throw ValidationError if promptText is missing', async () => {
+    it('should allow promptText to be empty', async () => {
       const invalidData = { ...validQuestionData, promptText: '' };
+      const createdQuestion = {
+        QuestionId: '44444444-4444-4444-4444-444444444444',
+        SurveyId: surveyId,
+        Type: validQuestionData.type,
+        PromptText: ''
+      };
 
-      await expect(surveyService.addQuestion(surveyId, invalidData))
-        .rejects.toThrow(ValidationError);
-      await expect(surveyService.addQuestion(surveyId, invalidData))
-        .rejects.toThrow('Prompt text is required');
+      mockRequest.query
+        .mockResolvedValueOnce({ recordset: [{ SurveyId: surveyId, Status: 'Draft' }] })
+        .mockResolvedValueOnce({ recordset: [{ NextOrder: 1 }] })
+        .mockResolvedValueOnce({ recordset: [createdQuestion] });
+
+      const result = await surveyService.addQuestion(surveyId, invalidData);
+
+      expect(result.PromptText).toBe('');
     });
 
     it('should throw ValidationError if type is invalid', async () => {
@@ -717,21 +727,24 @@ describe('SurveyService', () => {
         .resolves.toBeDefined();
     });
 
-    it('should throw ValidationError if promptText is empty', async () => {
+    it('should allow promptText to be updated to an empty string', async () => {
       const testRequest1 = {
         input: jest.fn().mockReturnThis(),
         query: jest.fn().mockResolvedValueOnce({ recordset: [{ QuestionId: questionId, SurveyId: surveyId }] })
       };
       const testRequest2 = {
         input: jest.fn().mockReturnThis(),
-        query: jest.fn()
+        query: jest.fn().mockResolvedValueOnce({
+          recordset: [{ QuestionId: questionId, SurveyId: surveyId, PromptText: '', Options: null }]
+        })
       };
       mockPool.request = jest.fn()
         .mockReturnValueOnce(testRequest1)
         .mockReturnValueOnce(testRequest2);
 
-      await expect(surveyService.updateQuestion(questionId, { promptText: '' }))
-        .rejects.toThrow(ValidationError);
+      const result = await surveyService.updateQuestion(questionId, { promptText: '' });
+
+      expect(result.PromptText).toBe('');
     });
 
     it('should throw ValidationError if no fields to update', async () => {
