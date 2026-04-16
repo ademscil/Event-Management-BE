@@ -1,5 +1,7 @@
 const { body, param, query, validationResult } = require('express-validator');
 const divisionService = require('../services/divisionService');
+const bulkImportService = require('../services/bulkImportService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
 
 function handleServiceError(res, error, fallbackMessage) {
@@ -205,12 +207,150 @@ async function deleteDivision(req, res) {
   }
 }
 
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/divisions/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Divisions');
+
+    sheet.columns = [
+      { header: 'BU Name', key: 'buName', width: 30 },
+      { header: 'Divisi Code', key: 'code', width: 20 },
+      { header: 'Divisi Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.addRow({ buName: 'Corporate HO', code: 'ITD', name: 'IT Digital', status: 'Active' });
+    sheet.addRow({ buName: 'Main Dealer Jakarta', code: 'FIN', name: 'Finance', status: 'Active' });
+
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: BU Name harus sesuai dengan data BU yang ada. Kolom Status diisi Active atau Inactive.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-divisi-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download Division template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk divisions from Excel
+ * POST /api/v1/divisions/upload
+ */
+async function uploadDivisions(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    // Map BU Name -> BU Code for the import
+    // The bulkImportService expects 'Business Unit Code' column, but our template uses 'BU Name'
+    // We handle this by pre-processing the Excel to resolve BU Name -> Code
+    const ExcelJSLib = require('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const sheet = workbook.worksheets[0];
+
+    // Get header row
+    const headerRow = sheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
+
+    const buNameIdx = headers.indexOf('BU Name');
+    const codeIdx = headers.indexOf('Divisi Code');
+    const nameIdx = headers.indexOf('Divisi Name');
+    const statusIdx = headers.indexOf('Status');
+
+    if (buNameIdx === -1 || codeIdx === -1 || nameIdx === -1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format file tidak valid. Kolom yang diperlukan: BU Name, Divisi Code, Divisi Name, Status'
+      });
+    }
+
+    // Lookup BU by Name
+    const sql = require('../database/sql-client');
+    const db = require('../database/connection');
+    const pool = await db.getPool();
+    const buResult = await pool.request().query('SELECT BusinessUnitId, Name, Code FROM BusinessUnits WHERE IsActive = 1');
+    const buByName = new Map(buResult.recordset.map(b => [b.Name.toLowerCase().trim(), b]));
+
+    // Build new workbook with 'Business Unit Code' column for bulkImportService
+    const newWorkbook = new ExcelJSLib.Workbook();
+    const newSheet = newWorkbook.addWorksheet('Divisions');
+    newSheet.addRow(['Code', 'Name', 'Business Unit Code']);
+
+    let validRows = 0;
+    const errors = [];
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return; // skip header
+      const buName = String(row.getCell(buNameIdx + 1).value || '').trim();
+      const code = String(row.getCell(codeIdx + 1).value || '').trim();
+      const name = String(row.getCell(nameIdx + 1).value || '').trim();
+      if (!buName && !code && !name) return; // skip empty rows
+
+      const bu = buByName.get(buName.toLowerCase());
+      if (!bu) {
+        errors.push({ row: rowNumber, data: { buName, code, name }, errors: [`BU Name '${buName}' tidak ditemukan`] });
+        return;
+      }
+      newSheet.addRow([code, name, bu.Code]);
+      validRows++;
+    });
+
+    if (validRows === 0 && errors.length > 0) {
+      return res.status(400).json({ success: false, message: 'Tidak ada data valid untuk diimport', errors });
+    }
+
+    const buffer = await newWorkbook.xlsx.writeBuffer();
+    const { BulkImportService } = require('../services/bulkImportService');
+    const importSvc = new BulkImportService();
+    const result = await importSvc.importData(buffer, 'Division', { skipDuplicates: true, updateExisting: true });
+
+    const allErrors = [...errors, ...(result.errors || [])];
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed + errors.length}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed + errors.length,
+      errors: allErrors,
+    });
+  } catch (error) {
+    logger.error('Upload Division error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Divisi',
+      errors: error.errors || [],
+    });
+  }
+}
+
 module.exports = {
   createDivision,
   getDivisions,
   getDivisionById,
   updateDivision,
   deleteDivision,
+  downloadTemplate,
+  uploadDivisions,
   createDivisionValidation,
   updateDivisionValidation
 };

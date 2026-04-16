@@ -1,5 +1,7 @@
 const { body, param, validationResult } = require('express-validator');
 const businessUnitService = require('../services/businessUnitService');
+const bulkImportService = require('../services/bulkImportService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
 
 function handleServiceError(res, error, fallbackMessage) {
@@ -22,11 +24,6 @@ function handleServiceError(res, error, fallbackMessage) {
  * Validation rules for creating a business unit
  */
 const createBusinessUnitValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -38,11 +35,6 @@ const createBusinessUnitValidation = [
  */
 const updateBusinessUnitValidation = [
   param('id').isUUID().withMessage('Business Unit ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -68,8 +60,8 @@ async function createBusinessUnit(req, res) {
       });
     }
 
-    const { code, name } = req.body;
-    const businessUnit = await businessUnitService.createBusinessUnit({ code, name });
+    const { name } = req.body;
+    const businessUnit = await businessUnitService.createBusinessUnit({ name });
 
     res.status(201).json({
       success: true,
@@ -198,7 +190,85 @@ module.exports = {
   getBusinessUnitById,
   updateBusinessUnit,
   deleteBusinessUnit,
+  downloadTemplate,
+  uploadBusinessUnits,
   createBusinessUnitValidation,
   updateBusinessUnitValidation
 };
+
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/business-units/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Business Units');
+
+    sheet.columns = [
+      { header: 'BU Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    // Header style
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // Example rows
+    sheet.addRow({ name: 'Corporate HO', status: 'Active' });
+    sheet.addRow({ name: 'Main Dealer Jakarta', status: 'Active' });
+
+    // Note row
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. BU Code di-generate otomatis.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-bu-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download BU template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk business units from Excel
+ * POST /api/v1/business-units/upload
+ */
+async function uploadBusinessUnits(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    const result = await bulkImportService.importData(
+      req.file.buffer,
+      'BusinessUnit',
+      { skipDuplicates: true, updateExisting: true }
+    );
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed,
+      errors: result.errors,
+    });
+  } catch (error) {
+    logger.error('Upload BU error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Business Unit',
+      errors: error.errors || [],
+    });
+  }
+}
 

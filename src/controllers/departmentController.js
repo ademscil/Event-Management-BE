@@ -1,5 +1,7 @@
 const { body, param, query, validationResult } = require('express-validator');
 const departmentService = require('../services/departmentService');
+const bulkImportService = require('../services/bulkImportService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
 
 function handleServiceError(res, error, fallbackMessage) {
@@ -205,12 +207,129 @@ async function deleteDepartment(req, res) {
   }
 }
 
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/departments/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Departments');
+
+    sheet.columns = [
+      { header: 'Divisi Code', key: 'divisiCode', width: 20 },
+      { header: 'Department Code', key: 'code', width: 20 },
+      { header: 'Department Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.addRow({ divisiCode: 'ITD', code: 'ITD-01', name: 'IT Digital Development', status: 'Active' });
+    sheet.addRow({ divisiCode: 'FIN', code: 'FIN-01', name: 'Finance Operations', status: 'Active' });
+
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: Divisi Code harus sesuai dengan data Divisi yang ada. Kolom Status diisi Active atau Inactive.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-department-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download Department template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk departments from Excel
+ * POST /api/v1/departments/upload
+ */
+async function uploadDepartments(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    const ExcelJSLib = require('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const sheet = workbook.worksheets[0];
+
+    const headerRow = sheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
+
+    const divCodeIdx = headers.indexOf('Divisi Code');
+    const codeIdx = headers.indexOf('Department Code');
+    const nameIdx = headers.indexOf('Department Name');
+
+    if (divCodeIdx === -1 || codeIdx === -1 || nameIdx === -1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format file tidak valid. Kolom yang diperlukan: Divisi Code, Department Code, Department Name, Status'
+      });
+    }
+
+    // Build new workbook with 'Division Code' column for bulkImportService
+    const newWorkbook = new ExcelJSLib.Workbook();
+    const newSheet = newWorkbook.addWorksheet('Departments');
+    newSheet.addRow(['Code', 'Name', 'Division Code']);
+
+    let validRows = 0;
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const divCode = String(row.getCell(divCodeIdx + 1).value || '').trim();
+      const code = String(row.getCell(codeIdx + 1).value || '').trim();
+      const name = String(row.getCell(nameIdx + 1).value || '').trim();
+      if (!divCode && !code && !name) return;
+      newSheet.addRow([code, name, divCode]);
+      validRows++;
+    });
+
+    if (validRows === 0) {
+      return res.status(400).json({ success: false, message: 'Tidak ada data valid untuk diimport' });
+    }
+
+    const buffer = await newWorkbook.xlsx.writeBuffer();
+    const { BulkImportService } = require('../services/bulkImportService');
+    const importSvc = new BulkImportService();
+    const result = await importSvc.importData(buffer, 'Department', { skipDuplicates: true, updateExisting: true });
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed,
+      errors: result.errors,
+    });
+  } catch (error) {
+    logger.error('Upload Department error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Department',
+      errors: error.errors || [],
+    });
+  }
+}
+
 module.exports = {
   createDepartment,
   getDepartments,
   getDepartmentById,
   updateDepartment,
   deleteDepartment,
+  downloadTemplate,
+  uploadDepartments,
   createDepartmentValidation,
   updateDepartmentValidation
 };

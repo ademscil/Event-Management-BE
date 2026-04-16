@@ -187,38 +187,37 @@ class BulkImportService {
 
   /**
    * Import Business Unit
+   * Code is now auto-increment — lookup by Name to detect duplicates
    * @private
    */
   async _importBusinessUnit(data, request, options) {
-    // Check if exists
+    // Check if exists by Name
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Name = @name');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name
         await request
-          .input('name', sql.NVarChar(200), data.name)
           .query(`
             UPDATE BusinessUnits
-            SET Name = @name, UpdatedAt = GETDATE()
-            WHERE Code = @code
+            SET UpdatedAt = GETDATE()
+            WHERE Name = @name
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Business Unit with code '${data.code}' already exists`);
+        throw new Error(`Business Unit with name '${data.name}' already exists`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
       .query(`
-        INSERT INTO BusinessUnits (Code, Name, IsActive, CreatedAt)
-        VALUES (@code, @name, 1, GETDATE())
+        INSERT INTO BusinessUnits (Name, IsActive, CreatedAt)
+        VALUES (@name, 1, GETDATE())
       `);
 
     return { action: 'imported' };

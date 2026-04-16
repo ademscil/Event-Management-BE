@@ -71,30 +71,40 @@ router.patch('/users/:id/password', requireAuth, requirePermission('users:update
 
 // Master data
 router.get('/business-units', requireAuth, requirePermission('master-data:read'), businessUnitController.getBusinessUnits);
+router.get('/business-units/template', requireAuth, requirePermission('master-data:read'), businessUnitController.downloadTemplate);
+router.post('/business-units/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), businessUnitController.uploadBusinessUnits);
 router.get('/business-units/:id', requireAuth, requirePermission('master-data:read'), businessUnitController.getBusinessUnitById);
 router.post('/business-units', requireAuth, requirePermission('master-data:create'), businessUnitController.createBusinessUnitValidation, businessUnitController.createBusinessUnit);
 router.put('/business-units/:id', requireAuth, requirePermission('master-data:update'), businessUnitController.updateBusinessUnitValidation, businessUnitController.updateBusinessUnit);
 router.delete('/business-units/:id', requireAuth, requirePermission('master-data:delete'), businessUnitController.deleteBusinessUnit);
 
 router.get('/divisions', requireAuth, requirePermission('master-data:read'), divisionController.getDivisions);
+router.get('/divisions/template', requireAuth, requirePermission('master-data:read'), divisionController.downloadTemplate);
+router.post('/divisions/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), divisionController.uploadDivisions);
 router.get('/divisions/:id', requireAuth, requirePermission('master-data:read'), divisionController.getDivisionById);
 router.post('/divisions', requireAuth, requirePermission('master-data:create'), divisionController.createDivisionValidation, divisionController.createDivision);
 router.put('/divisions/:id', requireAuth, requirePermission('master-data:update'), divisionController.updateDivisionValidation, divisionController.updateDivision);
 router.delete('/divisions/:id', requireAuth, requirePermission('master-data:delete'), divisionController.deleteDivision);
 
 router.get('/departments', requireAuth, requirePermission('master-data:read'), departmentController.getDepartments);
+router.get('/departments/template', requireAuth, requirePermission('master-data:read'), departmentController.downloadTemplate);
+router.post('/departments/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), departmentController.uploadDepartments);
 router.get('/departments/:id', requireAuth, requirePermission('master-data:read'), departmentController.getDepartmentById);
 router.post('/departments', requireAuth, requirePermission('master-data:create'), departmentController.createDepartmentValidation, departmentController.createDepartment);
 router.put('/departments/:id', requireAuth, requirePermission('master-data:update'), departmentController.updateDepartmentValidation, departmentController.updateDepartment);
 router.delete('/departments/:id', requireAuth, requirePermission('master-data:delete'), departmentController.deleteDepartment);
 
 router.get('/functions', requireAuth, requirePermission('master-data:read'), functionController.getFunctions);
+router.get('/functions/template', requireAuth, requirePermission('master-data:read'), functionController.downloadTemplate);
+router.post('/functions/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), functionController.uploadFunctions);
 router.get('/functions/:id', requireAuth, requirePermission('master-data:read'), functionController.getFunctionById);
 router.post('/functions', requireAuth, requirePermission('master-data:create'), functionController.createFunctionValidation, functionController.createFunction);
 router.put('/functions/:id', requireAuth, requirePermission('master-data:update'), functionController.updateFunctionValidation, functionController.updateFunction);
 router.delete('/functions/:id', requireAuth, requirePermission('master-data:delete'), functionController.deleteFunction);
 
 router.get('/applications', requireAuth, requirePermission('master-data:read'), applicationController.getApplications);
+router.get('/applications/template', requireAuth, requirePermission('master-data:read'), applicationController.downloadTemplate);
+router.post('/applications/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), applicationController.uploadApplications);
 router.get('/applications/:id', requireAuth, requirePermission('master-data:read'), applicationController.getApplicationById);
 router.post('/applications', requireAuth, requirePermission('master-data:create'), applicationController.createApplicationValidation, applicationController.createApplication);
 router.put('/applications/:id', requireAuth, requirePermission('master-data:update'), applicationController.updateApplicationValidation, applicationController.updateApplication);

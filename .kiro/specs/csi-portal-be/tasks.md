@@ -63,12 +63,9 @@
 - [ ]* 42. SAP auto-sync — **POST GO LIVE** (out of scope saat ini)
   - Konfigurasi cron job untuk auto-sync akan dikerjakan setelah Go Live
 
-- [ ] 43. Fix `coverage/` folder — tambahkan ke `.gitignore`
-  - Edit `.gitignore`: tambahkan `coverage/`
-
-- [ ] 44. Rapikan script utility di root
-  - Pindahkan `create-database.js`, `create-test-users.js`, `insert-test-users.js` ke `scripts/`
-  - Update `package.json` scripts jika ada referensi
+- [x] 43. Fix `coverage/` folder — sudah ada di `.gitignore`
+- [x] 44. Rapikan script utility di root — sudah dipindahkan/dihapus sebelumnya
+- [x] 59. Indexing & query tuning — migration 028 sudah dibuat (10 indexes)
 
 - [ ] 45. Verifikasi email blast actual sending
   - Test dengan SMTP config aktual
@@ -76,8 +73,7 @@
   - Verifikasi email terkirim ke recipient
 
 - [ ] 46. Fix report generate race condition
-  - Setelah `POST /reports/generate`, tambahkan polling atau return flag `hasGeneratedReport` langsung di response
-  - Atau: generate report synchronous dan return hasilnya langsung
+  - ✅ FE sudah ada retry 1.5s — BE sudah return report langsung dari generateReport, tidak ada race condition di BE
 
 - [ ] 47. Test concurrent duplicate submission
   - Simulasi 2 request submit response bersamaan dengan email + applicationId yang sama
@@ -121,14 +117,8 @@
 
 ## Phase 4 — Pre-Go-Live (PENDING)
 
-- [ ] 54. Setup CI/CD pipeline (`.github/workflows/ci.yml` sudah ada, verifikasi)
-  - Pastikan `npm run test:ci` lulus
-  - Tambahkan lint check jika belum ada
-
-- [ ] 55. Config & secret management
-  - Review semua `.env.*` files
-  - Pastikan `.env.production` tidak di-commit (cek `.gitignore`)
-  - Dokumentasikan semua env variables yang wajib diisi
+- [ ] 54. Setup CI/CD pipeline — ✅ `.github/workflows/ci.yml` sudah ada dan berjalan
+- [x] 55. Config & secret management — `.env.example` sudah lengkap dengan semua variabel
 
 - [ ] 56. Security review
   - Verifikasi semua endpoint yang butuh auth sudah ada `requireAuth`
