@@ -2,6 +2,22 @@ const { body, param, query, validationResult } = require('express-validator');
 const departmentService = require('../services/departmentService');
 const logger = require('../config/logger');
 
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
+
 /**
  * Validation rules for creating a department
  */
@@ -59,27 +75,16 @@ async function createDepartment(req, res) {
     }
 
     const departmentData = req.body;
-    const result = await departmentService.createDepartment(departmentData);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department creation failed',
-        message: result.errorMessage
-      });
-    }
+    const department = await departmentService.createDepartment(departmentData);
 
     res.status(201).json({
       success: true,
       message: 'Department created successfully',
-      department: result.department
+      department
     });
 
   } catch (error) {
-    logger.error('Create department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating department'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating department');
   }
 }
 
@@ -166,27 +171,16 @@ async function updateDepartment(req, res) {
     const departmentId = req.params.id;
     const updates = req.body;
 
-    const result = await departmentService.updateDepartment(departmentId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department update failed',
-        message: result.errorMessage
-      });
-    }
+    const department = await departmentService.updateDepartment(departmentId, updates);
 
     res.json({
       success: true,
       message: 'Department updated successfully',
-      department: result.department
+      department
     });
 
   } catch (error) {
-    logger.error('Update department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating department'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating department');
   }
 }
 
@@ -199,14 +193,7 @@ async function updateDepartment(req, res) {
 async function deleteDepartment(req, res) {
   try {
     const departmentId = req.params.id;
-    const result = await departmentService.deleteDepartment(departmentId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await departmentService.deleteDepartment(departmentId);
 
     res.json({
       success: true,
@@ -214,11 +201,7 @@ async function deleteDepartment(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting department'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting department');
   }
 }
 

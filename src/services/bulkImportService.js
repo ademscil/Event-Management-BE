@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const db = require('../database/connection');
 const logger = require('../config/logger');
 const { TemplateParser, ValidationError } = require('./templateParser');
@@ -704,3 +706,4 @@ class BulkImportService {
 }
 
 module.exports = { BulkImportService, ValidationError };
+

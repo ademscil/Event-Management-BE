@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
@@ -356,3 +358,4 @@ module.exports.FunctionService = FunctionService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+

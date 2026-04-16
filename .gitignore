@@ -23,7 +23,6 @@ coverage/
 # IDE
 .vscode/
 .idea/
-.kiro/
 *.swp
 *.swo
 .tmp-backend-dev.log
@@ -35,3 +34,6 @@ Thumbs.db
 # Build
 dist/
 build/
+
+# local archive artifacts
+csi-dev-BE.zip

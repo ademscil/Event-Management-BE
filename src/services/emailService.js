@@ -1,3 +1,4 @@
+const sql = require('../database/sql-client');
 /**
  * Email Service
  * Handles email sending, template rendering, and email logging
@@ -8,7 +9,8 @@ const ejs = require('ejs');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs').promises;
-const sql = require('mssql');
+
+  
 const logger = require('../config/logger');
 const db = require('../database/connection');
 
@@ -932,4 +934,5 @@ class EmailService {
 
 // Export singleton instance
 module.exports = new EmailService();
+
 

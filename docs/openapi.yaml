@@ -1,53 +1,64 @@
 openapi: 3.0.3
 info:
   title: CSI Portal API
-  version: 1.0.0
-  description: API documentation for CSI Web App (Admin + Respondent).
+  version: 1.1.0
+  description: |
+    Current API contract for CSI Web App.
+    Notes:
+    - User endpoints accept `UserId` or `Username` where the path uses `{id}`.
+    - Survey/Event endpoints accept `SurveyId` (UUID) or `SurveyNo` (numeric string).
+    - Event routes are aliases of survey routes and are used by the current frontend.
 servers:
   - url: http://localhost:3000
     description: Local backend
 security:
   - bearerAuth: []
 tags:
-  - name: Auth
-  - name: Users
-  - name: Mappings
-  - name: Surveys
-  - name: Questions
-  - name: Responses
+  - { name: Auth }
+  - { name: Public Master Data }
+  - { name: Users }
+  - { name: Master Data }
+  - { name: Mappings }
+  - { name: Events & Surveys }
+  - { name: Questions }
+  - { name: Responses }
+  - { name: Reports }
+  - { name: Approvals }
+  - { name: Emails }
+  - { name: Audit }
+  - { name: SAP Integration }
 paths:
   /api/v1/health:
     get:
       tags: [Auth]
       summary: API health check
       security: []
-      responses:
-        "200":
-          description: API healthy
+      responses: { "200": { description: API healthy } }
   /api/v1/auth/login:
     post:
       tags: [Auth]
-      summary: Login with username and password
+      summary: Login
       security: []
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/LoginRequest"
+            schema: { $ref: "#/components/schemas/LoginRequest" }
       responses:
         "200":
           description: Login success
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/LoginResponse"
-        "401":
-          description: Invalid username/password
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+  /api/v1/auth/validate:
+    get:
+      tags: [Auth]
+      summary: Validate token
+      responses: { "200": { description: Token valid } }
   /api/v1/auth/refresh:
     post:
       tags: [Auth]
-      summary: Refresh access token
+      summary: Refresh token
       security: []
       requestBody:
         required: true
@@ -57,45 +68,64 @@ paths:
               type: object
               required: [refreshToken]
               properties:
-                refreshToken:
-                  type: string
+                refreshToken: { type: string }
       responses:
         "200":
-          description: New token pair
+          description: Refresh success
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
   /api/v1/auth/logout:
     post:
       tags: [Auth]
-      summary: Logout current session
-      responses:
-        "200":
-          description: Logged out
-  /api/v1/auth/validate:
+      summary: Logout
+      responses: { "200": { description: Logged out } }
+  /api/v1/auth/me:
     get:
       tags: [Auth]
-      summary: Validate access token
-      responses:
-        "200":
-          description: Token valid
+      summary: Get current user
+      responses: { "200": { description: Current user profile } }
+  /api/v1/auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: Request reset password
+      security: []
+      responses: { "200": { description: Reset request accepted } }
+  /api/v1/auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: Reset password
+      security: []
+      responses: { "200": { description: Password reset success } }
+  /api/v1/public/business-units:
+    get:
+      tags: [Public Master Data]
+      summary: Public business units
+      security: []
+      responses: { "200": { description: Business unit list } }
+  /api/v1/public/divisions:
+    get:
+      tags: [Public Master Data]
+      summary: Public divisions
+      security: []
+      responses: { "200": { description: Division list } }
+  /api/v1/public/departments:
+    get:
+      tags: [Public Master Data]
+      summary: Public departments
+      security: []
+      responses: { "200": { description: Department list } }
+  /api/v1/public/functions:
+    get:
+      tags: [Public Master Data]
+      summary: Public functions
+      security: []
+      responses: { "200": { description: Function list } }
   /api/v1/users:
     get:
       tags: [Users]
       summary: List users
-      parameters:
-        - in: query
-          name: search
-          schema: { type: string }
-        - in: query
-          name: role
-          schema: { type: string }
-        - in: query
-          name: isActive
-          schema: { type: boolean }
-        - in: query
-          name: includeInactive
-          schema: { type: boolean }
-      responses:
-        "200":
-          description: Users list
+      responses: { "200": { description: Users list } }
     post:
       tags: [Users]
       summary: Create user
@@ -103,181 +133,224 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/CreateUserRequest"
-      responses:
-        "201":
-          description: User created
+            schema: { $ref: "#/components/schemas/CreateUserRequest" }
+      responses: { "201": { description: User created } }
   /api/v1/users/{id}:
     get:
       tags: [Users]
-      summary: Get user by id
-      parameters:
-        - $ref: "#/components/parameters/UserId"
-      responses:
-        "200":
-          description: User detail
+      summary: Get user by identifier
+      parameters: [ { $ref: "#/components/parameters/UserIdentifier" } ]
+      responses: { "200": { description: User detail } }
     put:
       tags: [Users]
-      summary: Update user
-      parameters:
-        - $ref: "#/components/parameters/UserId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateUserRequest"
-      responses:
-        "200":
-          description: User updated
+      summary: Update user by identifier
+      parameters: [ { $ref: "#/components/parameters/UserIdentifier" } ]
+      responses: { "200": { description: User updated } }
     delete:
       tags: [Users]
-      summary: Deactivate user
-      parameters:
-        - $ref: "#/components/parameters/UserId"
-      responses:
-        "200":
-          description: User deactivated
-  /api/v1/users/{id}/ldap:
-    patch:
-      tags: [Users]
-      summary: Toggle LDAP mode
-      parameters:
-        - $ref: "#/components/parameters/UserId"
+      summary: Deactivate user by identifier
+      parameters: [ { $ref: "#/components/parameters/UserIdentifier" } ]
+      responses: { "200": { description: User deactivated } }
+  /api/v1/business-units:
+    get:
+      tags: [Master Data]
+      summary: List business units
+      responses: { "200": { description: Business unit list } }
+    post:
+      tags: [Master Data]
+      summary: Create business unit
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [useLDAP]
-              properties:
-                useLDAP:
-                  type: boolean
-      responses:
-        "200":
-          description: LDAP setting updated
-  /api/v1/users/{id}/password:
-    patch:
-      tags: [Users]
-      summary: Set password for non-LDAP user
-      parameters:
-        - $ref: "#/components/parameters/UserId"
+            schema: { $ref: "#/components/schemas/BusinessUnitRequest" }
+      responses: { "201": { description: Business unit created } }
+  /api/v1/divisions:
+    get:
+      tags: [Master Data]
+      summary: List divisions
+      responses: { "200": { description: Division list } }
+    post:
+      tags: [Master Data]
+      summary: Create division
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [password]
-              properties:
-                password:
-                  type: string
-                  minLength: 8
-      responses:
-        "200":
-          description: Password updated
-  /api/v1/mappings/function-application/function/{functionId}:
+            schema: { $ref: "#/components/schemas/DivisionRequest" }
+      responses: { "201": { description: Division created } }
+  /api/v1/departments:
+    get:
+      tags: [Master Data]
+      summary: List departments
+      responses: { "200": { description: Department list } }
+    post:
+      tags: [Master Data]
+      summary: Create department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DepartmentRequest" }
+      responses: { "201": { description: Department created } }
+  /api/v1/functions:
+    get:
+      tags: [Master Data]
+      summary: List functions
+      responses: { "200": { description: Function list } }
+    post:
+      tags: [Master Data]
+      summary: Create function
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FunctionRequest" }
+      responses: { "201": { description: Function created } }
+  /api/v1/applications:
+    get:
+      tags: [Master Data]
+      summary: List applications
+      responses: { "200": { description: Application list } }
+    post:
+      tags: [Master Data]
+      summary: Create application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ApplicationRequest" }
+      responses: { "201": { description: Application created } }
+  /api/v1/mappings/function-application:
     get:
       tags: [Mappings]
-      summary: Get applications by function
-      parameters:
-        - in: path
-          name: functionId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Applications mapped to function
-  /api/v1/mappings/application-department/department/{departmentId}:
+      summary: List function-application mappings
+      responses: { "200": { description: Mapping list } }
+    post:
+      tags: [Mappings]
+      summary: Create function-application mapping
+      responses: { "201": { description: Mapping created } }
+  /api/v1/mappings/application-department:
     get:
       tags: [Mappings]
-      summary: Get applications by department
-      parameters:
-        - in: path
-          name: departmentId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Applications mapped to department
+      summary: List application-department mappings
+      responses: { "200": { description: Mapping list } }
+    post:
+      tags: [Mappings]
+      summary: Create application-department mapping
+      responses: { "201": { description: Mapping created } }
+  /api/v1/mappings/function-app/details:
+    get:
+      tags: [Mappings]
+      summary: Detailed function-application mapping alias
+      responses: { "200": { description: Detailed mapping list } }
+  /api/v1/mappings/app-dept/hierarchical:
+    get:
+      tags: [Mappings]
+      summary: Hierarchical app-department mapping alias
+      responses: { "200": { description: Hierarchical mapping list } }
   /api/v1/surveys:
     get:
-      tags: [Surveys]
-      summary: List surveys/events
-      responses:
-        "200":
-          description: Survey list
+      tags: [Events & Surveys]
+      summary: List surveys
+      responses: { "200": { description: Survey list } }
     post:
-      tags: [Surveys]
+      tags: [Events & Surveys]
       summary: Create survey
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                title: { type: string }
-                description: { type: string }
-      responses:
-        "201":
-          description: Survey created
+            schema: { $ref: "#/components/schemas/SurveyRequest" }
+      responses: { "201": { description: Survey created } }
   /api/v1/surveys/{id}:
     get:
-      tags: [Surveys]
-      summary: Get survey by id
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Survey detail
+      tags: [Events & Surveys]
+      summary: Get survey by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Survey detail } }
     put:
-      tags: [Surveys]
-      summary: Update survey by id
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "200":
-          description: Survey updated
+      tags: [Events & Surveys]
+      summary: Update survey by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Survey updated } }
+    delete:
+      tags: [Events & Surveys]
+      summary: Delete survey by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Survey deleted } }
+  /api/v1/surveys/{id}/config:
+    patch:
+      tags: [Events & Surveys]
+      summary: Update survey config
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Config updated } }
+  /api/v1/surveys/{id}/preview:
+    get:
+      tags: [Events & Surveys]
+      summary: Generate preview
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Preview payload } }
+  /api/v1/surveys/{id}/link:
+    post:
+      tags: [Events & Surveys]
+      summary: Generate public link
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "201": { description: Link generated } }
+  /api/v1/surveys/{id}/qrcode:
+    post:
+      tags: [Events & Surveys]
+      summary: Generate QR code
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "201": { description: QR code generated } }
+  /api/v1/surveys/{id}/embed:
+    post:
+      tags: [Events & Surveys]
+      summary: Generate embed code
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "201": { description: Embed code generated } }
+  /api/v1/surveys/{id}/scheduled-operations:
+    get:
+      tags: [Events & Surveys]
+      summary: Get scheduled operations
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Scheduled operations } }
+  /api/v1/events:
+    get:
+      tags: [Events & Surveys]
+      summary: Event list alias of surveys
+      responses: { "200": { description: Event list } }
+    post:
+      tags: [Events & Surveys]
+      summary: Event create alias of surveys
+      responses: { "201": { description: Event created } }
+  /api/v1/events/{id}:
+    get:
+      tags: [Events & Surveys]
+      summary: Get event by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Event detail } }
+    put:
+      tags: [Events & Surveys]
+      summary: Update event by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Event updated } }
+    delete:
+      tags: [Events & Surveys]
+      summary: Delete event by identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyIdentifier" } ]
+      responses: { "200": { description: Event deleted } }
   /api/v1/questions/survey/{surveyId}:
     get:
       tags: [Questions]
-      summary: List questions by survey
-      parameters:
-        - in: path
-          name: surveyId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Questions list
+      summary: List questions by survey identifier
+      parameters: [ { $ref: "#/components/parameters/SurveyPathIdentifier" } ]
+      responses: { "200": { description: Questions list } }
   /api/v1/questions:
     post:
       tags: [Questions]
       summary: Add question
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "201":
-          description: Question created
+      responses: { "201": { description: Question created } }
   /api/v1/questions/{id}:
     put:
       tags: [Questions]
@@ -287,15 +360,7 @@ paths:
           name: id
           required: true
           schema: { type: string, format: uuid }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "200":
-          description: Question updated
+      responses: { "200": { description: Question updated } }
     delete:
       tags: [Questions]
       summary: Delete question
@@ -304,36 +369,150 @@ paths:
           name: id
           required: true
           schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Question deleted
+      responses: { "200": { description: Question deleted } }
   /api/v1/responses/survey/{surveyId}/form:
     get:
       tags: [Responses]
-      summary: Public survey form payload
+      summary: Public survey form
       security: []
-      parameters:
-        - in: path
-          name: surveyId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        "200":
-          description: Form payload
+      parameters: [ { $ref: "#/components/parameters/SurveyPathIdentifier" } ]
+      responses: { "200": { description: Form payload } }
+  /api/v1/responses/survey/{surveyId}/applications:
+    get:
+      tags: [Responses]
+      summary: Public available applications
+      security: []
+      parameters: [ { $ref: "#/components/parameters/SurveyPathIdentifier" } ]
+      responses: { "200": { description: Application options } }
+  /api/v1/responses/check-duplicate:
+    post:
+      tags: [Responses]
+      summary: Check duplicate response
+      security: []
+      responses: { "200": { description: Duplicate check result } }
   /api/v1/responses:
     post:
       tags: [Responses]
       summary: Submit survey response
       security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-      responses:
-        "201":
-          description: Response submitted
+      responses: { "201": { description: Response submitted } }
+    get:
+      tags: [Responses]
+      summary: List managed responses
+      responses: { "200": { description: Response list } }
+  /api/v1/responses/survey/{surveyId}/statistics:
+    get:
+      tags: [Responses]
+      summary: Survey statistics
+      parameters: [ { $ref: "#/components/parameters/SurveyPathIdentifier" } ]
+      responses: { "200": { description: Survey statistics } }
+  /api/v1/reports/generate:
+    post:
+      tags: [Reports]
+      summary: Generate report
+      responses: { "200": { description: Report generated } }
+  /api/v1/reports/view:
+    post:
+      tags: [Reports]
+      summary: View report
+      responses: { "200": { description: Report payload } }
+  /api/v1/reports/selection-list:
+    get:
+      tags: [Reports]
+      summary: Report selection list
+      responses: { "200": { description: Selection list } }
+  /api/v1/reports/export/excel:
+    post:
+      tags: [Reports]
+      summary: Export report to Excel
+      responses: { "200": { description: Excel export } }
+  /api/v1/reports/export/pdf:
+    post:
+      tags: [Reports]
+      summary: Export report to PDF
+      responses: { "200": { description: PDF export } }
+  /api/v1/approvals/respondents:
+    get:
+      tags: [Approvals]
+      summary: Get respondents for approval
+      responses: { "200": { description: Respondent review list } }
+  /api/v1/approvals/pending:
+    get:
+      tags: [Approvals]
+      summary: Get pending approvals
+      responses: { "200": { description: Pending approvals } }
+  /api/v1/approvals/proposed-takeouts:
+    get:
+      tags: [Approvals]
+      summary: Get proposed takeouts
+      responses: { "200": { description: Proposed takeout list } }
+  /api/v1/approvals/respondents/approve:
+    post:
+      tags: [Approvals]
+      summary: Approve initial respondents
+      responses: { "200": { description: Approval success } }
+  /api/v1/approvals/respondents/final-approve:
+    post:
+      tags: [Approvals]
+      summary: Final approve by IT Lead
+      responses: { "200": { description: Final approval success } }
+  /api/v1/approvals/propose-takeout:
+    post:
+      tags: [Approvals]
+      summary: Propose takeout
+      responses: { "200": { description: Takeout proposed } }
+    delete:
+      tags: [Approvals]
+      summary: Cancel proposed takeout
+      responses: { "200": { description: Takeout cancelled } }
+  /api/v1/approvals/best-comments:
+    get:
+      tags: [Approvals]
+      summary: Get best comments
+      responses: { "200": { description: Best comments } }
+    post:
+      tags: [Approvals]
+      summary: Mark best comments
+      responses: { "201": { description: Best comments marked } }
+    delete:
+      tags: [Approvals]
+      summary: Unmark best comment
+      responses: { "200": { description: Best comment removed } }
+  /api/v1/approvals/best-comments-with-feedback:
+    get:
+      tags: [Approvals]
+      summary: Get best comments with feedback
+      responses: { "200": { description: Best comments with feedback } }
+  /api/v1/approvals/best-comments/feedback:
+    post:
+      tags: [Approvals]
+      summary: Submit best comment feedback
+      responses: { "201": { description: Feedback submitted } }
+  /api/v1/emails/blast:
+    post:
+      tags: [Emails]
+      summary: Send blast email
+      responses: { "200": { description: Blast queued or sent } }
+  /api/v1/emails/reminders:
+    post:
+      tags: [Emails]
+      summary: Send reminders
+      responses: { "200": { description: Reminder queued or sent } }
+  /api/v1/audit:
+    get:
+      tags: [Audit]
+      summary: Get audit logs
+      responses: { "200": { description: Audit log list } }
+  /api/v1/integrations/sap/sync:
+    post:
+      tags: [SAP Integration]
+      summary: Trigger SAP sync
+      responses: { "200": { description: SAP sync triggered } }
+  /api/v1/integrations/sap/sync/status:
+    get:
+      tags: [SAP Integration]
+      summary: SAP sync status
+      responses: { "200": { description: SAP sync status } }
 components:
   securitySchemes:
     bearerAuth:
@@ -341,109 +520,113 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
-    UserId:
+    UserIdentifier:
       in: path
       name: id
       required: true
-      schema:
-        type: string
-        format: uuid
+      description: Accepts legacy UserId (UUID) or Username.
+      schema: { type: string }
+    SurveyIdentifier:
+      in: path
+      name: id
+      required: true
+      description: Accepts SurveyId (UUID) or SurveyNo (numeric string).
+      schema: { type: string }
+    SurveyPathIdentifier:
+      in: path
+      name: surveyId
+      required: true
+      description: Accepts SurveyId (UUID) or SurveyNo (numeric string).
+      schema: { type: string }
   schemas:
     LoginRequest:
       type: object
       required: [username, password]
       properties:
-        username:
-          type: string
-          example: adam.cid00676
-        password:
-          type: string
-          example: "your-password"
+        username: { type: string, example: adam.cid00676 }
+        password: { type: string, example: admin123 }
     AuthUser:
       type: object
       properties:
         userId: { type: string, format: uuid }
+        userKey: { type: string, example: adam.cid00676 }
         username: { type: string }
         displayName: { type: string }
         email: { type: string }
-        role: { type: string, enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead] }
+        role:
+          type: string
+          enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead]
     LoginResponse:
       type: object
       properties:
-        success:
-          type: boolean
-          example: true
-        token:
-          type: string
-        refreshToken:
-          type: string
-        user:
-          $ref: "#/components/schemas/AuthUser"
+        success: { type: boolean, example: true }
+        user: { $ref: "#/components/schemas/AuthUser" }
     CreateUserRequest:
       type: object
-      required:
-        - username
-        - displayName
-        - email
-        - role
-        - useLDAP
-        - businessUnitId
-        - divisionId
-        - departmentId
+      required: [username, displayName, email, role]
       properties:
-        username:
-          type: string
-          example: adam.cid00676
-        npk:
-          type: string
-          example: "0676"
-        displayName:
-          type: string
-          example: Adam Ajul
-        email:
-          type: string
-          example: adam.ajul@company.co.id
+        username: { type: string }
+        npk: { type: string }
+        displayName: { type: string }
+        email: { type: string }
+        phoneNumber: { type: string, nullable: true }
         role:
           type: string
           enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead]
-        useLDAP:
-          type: boolean
-          example: true
-        businessUnitId:
-          type: string
-          format: uuid
-        divisionId:
-          type: string
-          format: uuid
-        departmentId:
-          type: string
-          format: uuid
-        password:
-          type: string
-          minLength: 8
-          nullable: true
-    UpdateUserRequest:
+        useLDAP: { type: boolean, default: true }
+        businessUnitId: { type: string, format: uuid, nullable: true }
+        divisionId: { type: string, format: uuid, nullable: true }
+        departmentId: { type: string, format: uuid, nullable: true }
+        functionIds:
+          type: array
+          items: { type: string, format: uuid }
+        password: { type: string, minLength: 8, nullable: true }
+    BusinessUnitRequest:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string, example: BU-IT }
+        name: { type: string, example: Information Technology }
+    DivisionRequest:
+      type: object
+      required: [businessUnitId, code, name]
+      properties:
+        businessUnitId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+    DepartmentRequest:
+      type: object
+      required: [divisionId, code, name]
+      properties:
+        divisionId: { type: string, format: uuid }
+        code: { type: string }
+        name: { type: string }
+    FunctionRequest:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        deptId: { type: string, format: uuid, nullable: true }
+    ApplicationRequest:
+      type: object
+      required: [code, name]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+    SurveyRequest:
       type: object
       properties:
-        username:
+        title: { type: string }
+        description: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        status:
           type: string
-        npk:
-          type: string
-        displayName:
-          type: string
-        email:
-          type: string
-        role:
-          type: string
-          enum: [SuperAdmin, AdminEvent, ITLead, DepartmentHead]
-        businessUnitId:
-          type: string
-          format: uuid
-        divisionId:
-          type: string
-          format: uuid
-        departmentId:
-          type: string
-          format: uuid
-        isActive:
-          type: boolean
+          enum: [Draft, Active, Closed, Archived]
+        targetRespondents: { type: integer }
+        targetScore: { type: number, format: float }
+        assignedAdminIds:
+          type: array
+          items: { type: string, format: uuid }

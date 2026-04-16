@@ -2,6 +2,22 @@ const { body, param, query, validationResult } = require('express-validator');
 const divisionService = require('../services/divisionService');
 const logger = require('../config/logger');
 
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
+
 /**
  * Validation rules for creating a division
  */
@@ -59,27 +75,16 @@ async function createDivision(req, res) {
     }
 
     const divisionData = req.body;
-    const result = await divisionService.createDivision(divisionData);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Division creation failed',
-        message: result.errorMessage
-      });
-    }
+    const division = await divisionService.createDivision(divisionData);
 
     res.status(201).json({
       success: true,
       message: 'Division created successfully',
-      division: result.division
+      division
     });
 
   } catch (error) {
-    logger.error('Create division controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating division'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating division');
   }
 }
 
@@ -166,27 +171,16 @@ async function updateDivision(req, res) {
     const divisionId = req.params.id;
     const updates = req.body;
 
-    const result = await divisionService.updateDivision(divisionId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Division update failed',
-        message: result.errorMessage
-      });
-    }
+    const division = await divisionService.updateDivision(divisionId, updates);
 
     res.json({
       success: true,
       message: 'Division updated successfully',
-      division: result.division
+      division
     });
 
   } catch (error) {
-    logger.error('Update division controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating division'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating division');
   }
 }
 
@@ -199,14 +193,7 @@ async function updateDivision(req, res) {
 async function deleteDivision(req, res) {
   try {
     const divisionId = req.params.id;
-    const result = await divisionService.deleteDivision(divisionId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Division deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await divisionService.deleteDivision(divisionId);
 
     res.json({
       success: true,
@@ -214,11 +201,7 @@ async function deleteDivision(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete division controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting division'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting division');
   }
 }
 

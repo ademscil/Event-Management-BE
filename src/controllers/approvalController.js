@@ -2,6 +2,28 @@ const { body, param, query, validationResult } = require('express-validator');
 const approvalService = require('../services/approvalService');
 const logger = require('../config/logger');
 
+function handleApprovalError(res, error, fallbackMessage) {
+  if (error?.name === 'ValidationError' || error?.name === 'NotFoundError') {
+    return res.status(400).json({
+      error: 'Validation failed',
+      message: error.message || fallbackMessage
+    });
+  }
+
+  if (error?.name === 'UnauthorizedError') {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: error.message || 'Akses tidak diizinkan'
+    });
+  }
+
+  logger.error(fallbackMessage, error);
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Propose takeout for question
  * POST /api/v1/approvals/propose-takeout
@@ -24,7 +46,8 @@ async function proposeTakeoutForQuestion(req, res) {
       responseId,
       questionId,
       reason,
-      proposedBy
+      proposedBy,
+      proposedByRole: req.user?.role
     });
 
     if (!result.success) {
@@ -40,11 +63,7 @@ async function proposeTakeoutForQuestion(req, res) {
     });
 
   } catch (error) {
-    logger.error('Propose takeout controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while proposing takeout'
-    });
+    return handleApprovalError(res, error, 'An error occurred while proposing takeout');
   }
 }
 
@@ -96,7 +115,8 @@ async function cancelProposedTakeout(req, res) {
     const result = await approvalService.cancelProposedTakeoutForQuestion(
       responseId,
       questionId,
-      req.user?.userId
+      req.user?.userId,
+      req.user?.role
     );
 
     if (!result.success) {
@@ -112,11 +132,7 @@ async function cancelProposedTakeout(req, res) {
     });
 
   } catch (error) {
-    logger.error('Cancel proposed takeout controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while cancelling takeout'
-    });
+    return handleApprovalError(res, error, 'An error occurred while cancelling takeout');
   }
 }
 
@@ -135,7 +151,8 @@ async function approveProposedTakeout(req, res) {
       responseId,
       questionId,
       approvedBy,
-      reason
+      reason,
+      req.user?.role
     );
 
     if (!result.success) {
@@ -151,11 +168,7 @@ async function approveProposedTakeout(req, res) {
     });
 
   } catch (error) {
-    logger.error('Approve takeout controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while approving takeout'
-    });
+    return handleApprovalError(res, error, 'An error occurred while approving takeout');
   }
 }
 
@@ -181,7 +194,8 @@ async function rejectProposedTakeout(req, res) {
       responseId,
       questionId,
       rejectedBy,
-      reason
+      reason,
+      req.user?.role
     );
 
     if (!result.success) {
@@ -197,11 +211,7 @@ async function rejectProposedTakeout(req, res) {
     });
 
   } catch (error) {
-    logger.error('Reject takeout controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while rejecting takeout'
-    });
+    return handleApprovalError(res, error, 'An error occurred while rejecting takeout');
   }
 }
 
@@ -254,7 +264,9 @@ async function getRespondents(req, res) {
       surveyId,
       duplicateFilter,
       applicationId,
-      departmentId
+      departmentId,
+      requesterUserId: req.user?.userId,
+      requesterRole: req.user?.role
     });
 
     res.json({
@@ -262,11 +274,7 @@ async function getRespondents(req, res) {
       respondents
     });
   } catch (error) {
-    logger.error('Get respondents controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching respondents'
-    });
+    return handleApprovalError(res, error, 'An error occurred while fetching respondents');
   }
 }
 
@@ -282,18 +290,14 @@ async function approveInitialResponses(req, res) {
       });
     }
 
-    const result = await approvalService.approveInitialResponses(responseIds, approvedBy, reason || null);
+    const result = await approvalService.approveInitialResponses(responseIds, approvedBy, reason || null, req.user?.role);
     res.json({
       success: true,
       message: 'Response berhasil di-approve oleh Admin Event',
       data: result
     });
   } catch (error) {
-    logger.error('Approve initial responses controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error.message || 'An error occurred while approving responses'
-    });
+    return handleApprovalError(res, error, 'An error occurred while approving responses');
   }
 }
 
@@ -309,18 +313,14 @@ async function rejectInitialResponses(req, res) {
       });
     }
 
-    const result = await approvalService.rejectInitialResponses(responseIds, rejectedBy, reason);
+    const result = await approvalService.rejectInitialResponses(responseIds, rejectedBy, reason, req.user?.role);
     res.json({
       success: true,
       message: 'Response berhasil di-reject oleh Admin Event',
       data: result
     });
   } catch (error) {
-    logger.error('Reject initial responses controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error.message || 'An error occurred while rejecting responses'
-    });
+    return handleApprovalError(res, error, 'An error occurred while rejecting responses');
   }
 }
 
@@ -336,18 +336,14 @@ async function approveFinalResponses(req, res) {
       });
     }
 
-    const result = await approvalService.approveFinalResponses(responseIds, approvedBy, reason || null);
+    const result = await approvalService.approveFinalResponses(responseIds, approvedBy, reason || null, req.user?.role);
     res.json({
       success: true,
       message: 'Response berhasil di-approve final oleh IT Lead',
       data: result
     });
   } catch (error) {
-    logger.error('Approve final responses controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: error.message || 'An error occurred while approving final responses'
-    });
+    return handleApprovalError(res, error, 'An error occurred while approving final responses');
   }
 }
 
@@ -394,7 +390,9 @@ async function getProposedTakeouts(req, res) {
       functionId,
       applicationId,
       departmentId,
-      status
+      status,
+      requesterUserId: req.user?.userId,
+      requesterRole: req.user?.role
     });
 
     res.json({
@@ -402,11 +400,7 @@ async function getProposedTakeouts(req, res) {
       takeouts
     });
   } catch (error) {
-    logger.error('Get proposed takeouts controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching proposed takeouts'
-    });
+    return handleApprovalError(res, error, 'An error occurred while fetching proposed takeouts');
   }
 }
 

@@ -2,6 +2,22 @@ const { body, param, validationResult } = require('express-validator');
 const applicationService = require('../services/applicationService');
 const logger = require('../config/logger');
 
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
+
 /**
  * Validation rules for creating an application
  */
@@ -61,27 +77,16 @@ async function createApplication(req, res) {
     }
 
     const applicationData = req.body;
-    const result = await applicationService.createApplication(applicationData);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Application creation failed',
-        message: result.errorMessage
-      });
-    }
+    const application = await applicationService.createApplication(applicationData);
 
     res.status(201).json({
       success: true,
       message: 'Application created successfully',
-      application: result.application
+      application
     });
 
   } catch (error) {
-    logger.error('Create application controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating application'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating application');
   }
 }
 
@@ -161,27 +166,16 @@ async function updateApplication(req, res) {
     const applicationId = req.params.id;
     const updates = req.body;
 
-    const result = await applicationService.updateApplication(applicationId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Application update failed',
-        message: result.errorMessage
-      });
-    }
+    const application = await applicationService.updateApplication(applicationId, updates);
 
     res.json({
       success: true,
       message: 'Application updated successfully',
-      application: result.application
+      application
     });
 
   } catch (error) {
-    logger.error('Update application controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating application'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating application');
   }
 }
 
@@ -194,14 +188,7 @@ async function updateApplication(req, res) {
 async function deleteApplication(req, res) {
   try {
     const applicationId = req.params.id;
-    const result = await applicationService.deleteApplication(applicationId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Application deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await applicationService.deleteApplication(applicationId);
 
     res.json({
       success: true,
@@ -209,11 +196,7 @@ async function deleteApplication(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete application controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting application'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting application');
   }
 }
 

@@ -1,6 +1,8 @@
+const sql = require('./sql-client');
 const fs = require('fs').promises;
 const path = require('path');
-const sql = require('mssql');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
 const readline = require('readline');
@@ -198,3 +200,4 @@ if (require.main === module) {
 }
 
 module.exports = MigrationRollback;
+

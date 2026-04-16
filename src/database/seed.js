@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('./sql-client');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
 const { hashPasswordLegacy } = require('../utils/passwordHash');
@@ -459,3 +461,4 @@ if (require.main === module) {
 }
 
 module.exports = DatabaseSeeder;
+

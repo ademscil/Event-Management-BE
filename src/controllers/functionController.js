@@ -2,6 +2,22 @@ const { body, param, validationResult } = require('express-validator');
 const functionService = require('../services/functionService');
 const logger = require('../config/logger');
 
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
+
 /**
  * Validation rules for creating a function
  */
@@ -68,11 +84,7 @@ async function createFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Create function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating function'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating function');
   }
 }
 
@@ -161,11 +173,7 @@ async function updateFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Update function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating function'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating function');
   }
 }
 
@@ -186,11 +194,7 @@ async function deleteFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting function'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting function');
   }
 }
 

@@ -2,6 +2,22 @@ const { body, param, validationResult } = require('express-validator');
 const businessUnitService = require('../services/businessUnitService');
 const logger = require('../config/logger');
 
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
+
 /**
  * Validation rules for creating a business unit
  */
@@ -53,27 +69,16 @@ async function createBusinessUnit(req, res) {
     }
 
     const { code, name } = req.body;
-    const result = await businessUnitService.createBusinessUnit({ code, name });
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit creation failed',
-        message: result.errorMessage
-      });
-    }
+    const businessUnit = await businessUnitService.createBusinessUnit({ code, name });
 
     res.status(201).json({
       success: true,
       message: 'Business unit created successfully',
-      businessUnit: result.businessUnit
+      businessUnit
     });
 
   } catch (error) {
-    logger.error('Create business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating business unit');
   }
 }
 
@@ -153,27 +158,16 @@ async function updateBusinessUnit(req, res) {
     const buId = req.params.id;
     const updates = req.body;
 
-    const result = await businessUnitService.updateBusinessUnit(buId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit update failed',
-        message: result.errorMessage
-      });
-    }
+    const businessUnit = await businessUnitService.updateBusinessUnit(buId, updates);
 
     res.json({
       success: true,
       message: 'Business unit updated successfully',
-      businessUnit: result.businessUnit
+      businessUnit
     });
 
   } catch (error) {
-    logger.error('Update business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating business unit');
   }
 }
 
@@ -186,14 +180,7 @@ async function updateBusinessUnit(req, res) {
 async function deleteBusinessUnit(req, res) {
   try {
     const buId = req.params.id;
-    const result = await businessUnitService.deleteBusinessUnit(buId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await businessUnitService.deleteBusinessUnit(buId);
 
     res.json({
       success: true,
@@ -201,11 +188,7 @@ async function deleteBusinessUnit(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting business unit');
   }
 }
 

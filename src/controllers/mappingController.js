@@ -3,6 +3,33 @@ const mappingService = require('../services/mappingService');
 const bulkImportService = require('../services/bulkImportService');
 const logger = require('../config/logger');
 
+function handleMappingError(res, error, fallbackMessage) {
+  const message = error?.message || fallbackMessage;
+  const statusCode = error?.statusCode;
+
+  if (statusCode && statusCode < 500) {
+    return res.status(statusCode).json({
+      error: error.name || 'Request failed',
+      message
+    });
+  }
+
+  if (
+    /required|already exists|not found|must be provided|invalid|inactive/i.test(message)
+  ) {
+    return res.status(400).json({
+      error: error?.name || 'Validation failed',
+      message
+    });
+  }
+
+  logger.error(fallbackMessage, error);
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Validation rules for creating Function-Application mapping
  */
@@ -58,17 +85,19 @@ async function createFunctionAppMapping(req, res) {
     const { functionId, applicationId, applicationIds } = req.body;
     const createdBy = req.user?.userId;
 
-    let result;
+    let mapping;
+    let mappings;
     if (applicationIds && applicationIds.length > 0) {
       // Multiple mappings
-      result = await mappingService.createMultipleFunctionAppMappings(
+      const result = await mappingService.createMultipleFunctionAppMappings(
         functionId,
         applicationIds,
         createdBy
       );
+      mappings = result.created;
     } else if (applicationId) {
       // Single mapping
-      result = await mappingService.createFunctionAppMapping(
+      mapping = await mappingService.createFunctionAppMapping(
         functionId,
         applicationId,
         createdBy
@@ -80,26 +109,15 @@ async function createFunctionAppMapping(req, res) {
       });
     }
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping creation failed',
-        message: result.errorMessage
-      });
-    }
-
     res.status(201).json({
       success: true,
       message: 'Function-Application mapping created successfully',
-      mapping: result.mapping,
-      mappings: result.mappings
+      mapping,
+      mappings
     });
 
   } catch (error) {
-    logger.error('Create Function-Application mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while creating mapping');
   }
 }
 
@@ -193,14 +211,7 @@ async function getFunctionsByApplication(req, res) {
 async function deleteFunctionAppMapping(req, res) {
   try {
     const mappingId = req.params.id;
-    const result = await mappingService.deleteFunctionAppMapping(mappingId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await mappingService.deleteFunctionAppMapping(mappingId);
 
     res.json({
       success: true,
@@ -208,11 +219,7 @@ async function deleteFunctionAppMapping(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete Function-Application mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while deleting mapping');
   }
 }
 
@@ -258,17 +265,19 @@ async function createAppDeptMapping(req, res) {
     const { departmentId, applicationId, applicationIds } = req.body;
     const createdBy = req.user?.userId;
 
-    let result;
+    let mapping;
+    let mappings;
     if (applicationIds && applicationIds.length > 0) {
       // Multiple mappings
-      result = await mappingService.createMultipleAppDeptMappings(
+      const result = await mappingService.createMultipleAppDeptMappings(
         departmentId,
         applicationIds,
         createdBy
       );
+      mappings = result.created;
     } else if (applicationId) {
       // Single mapping
-      result = await mappingService.createAppDeptMapping(
+      mapping = await mappingService.createAppDeptMapping(
         applicationId,
         departmentId,
         createdBy
@@ -280,26 +289,15 @@ async function createAppDeptMapping(req, res) {
       });
     }
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping creation failed',
-        message: result.errorMessage
-      });
-    }
-
     res.status(201).json({
       success: true,
       message: 'Application-Department mapping created successfully',
-      mapping: result.mapping,
-      mappings: result.mappings
+      mapping,
+      mappings
     });
 
   } catch (error) {
-    logger.error('Create Application-Department mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while creating mapping');
   }
 }
 
@@ -393,14 +391,7 @@ async function getDepartmentsByApplication(req, res) {
 async function deleteAppDeptMapping(req, res) {
   try {
     const mappingId = req.params.id;
-    const result = await mappingService.deleteAppDeptMapping(mappingId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await mappingService.deleteAppDeptMapping(mappingId);
 
     res.json({
       success: true,
@@ -408,11 +399,7 @@ async function deleteAppDeptMapping(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete Application-Department mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while deleting mapping');
   }
 }
 
