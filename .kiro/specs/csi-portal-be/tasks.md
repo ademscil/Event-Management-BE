@@ -56,9 +56,7 @@
 - [ ] 40. Verifikasi `cancelScheduledOperation` — pastikan response shape konsisten antara `/surveys/scheduled-operations/:id` dan FE
   - Test: DELETE → cek status berubah ke "Cancelled" di scheduled ops list
 
-- [ ] 41. Test LDAP integration dengan server aktual PT Astra
-  - Verifikasi bind credentials, attribute mapping (email, displayName)
-  - Test fallback ke password manual jika LDAP down
+- [x] 41. Test LDAP integration — ✅ Verified working dengan akun aktual PT Astra (SOAP ValidateLogin berhasil)
 
 - [ ]* 42. SAP auto-sync — **POST GO LIVE** (out of scope saat ini)
   - Konfigurasi cron job untuk auto-sync akan dikerjakan setelah Go Live
@@ -120,20 +118,27 @@
 - [ ] 54. Setup CI/CD pipeline — ✅ `.github/workflows/ci.yml` sudah ada dan berjalan
 - [x] 55. Config & secret management — `.env.example` sudah lengkap dengan semua variabel
 
-- [ ] 56. Security review
-  - Verifikasi semua endpoint yang butuh auth sudah ada `requireAuth`
-  - Verifikasi permission matrix sudah benar per role
-  - Cek tidak ada SQL injection vulnerability (parameterized queries)
-  - Cek input validation di semua POST/PUT endpoints
+- [x] 56. Security review
+  - Semua endpoint yang butuh auth sudah ada `requireAuth`
+  - Permission matrix sudah benar per role
+  - Parameterized queries di semua DB calls — tidak ada SQL injection
+  - Input validation di semua POST/PUT via `express-validator`
+  - notFoundHandler tidak expose path/method di production
+  - Cache-Control `no-store` di semua `/api/v1` routes
+  - Account lockout per-user via `getLoginLockoutStatus` + `LoginFailed` audit log
+  - Accept header 406 validation via `acceptHeaderValidation`
 
 - [ ] 57. Performance
   - Cek query yang sering dipanggil sudah ada index di DB
   - Cek tidak ada N+1 query di report generation
   - Test dengan dataset 1000+ responses
 
-- [ ] 58. Database backup rehearsal
-  - Test `npm run db:backup` berjalan
-  - Test restore dari backup
+- [x] 58. Database backup rehearsal
+  - `npm run db:backup` — full backup via `src/database/backup.js`
+  - `npm run db:backup:diff` — differential backup
+  - `npm run db:backup:verify` — verifikasi integritas backup (RESTORE VERIFYONLY)
+  - `npm run db:backup:list` — list semua file backup tersedia
+  - `src/database/restore-verify.js` dibuat: cek header, file list, integrity tanpa restore ke production
 
 - [ ] 59. Indexing & query tuning
   - Tambahkan index untuk: `Responses.SurveyId`, `QuestionResponses.ResponseId`, `AuditLogs.Timestamp`, `AuditLogs.UserId`

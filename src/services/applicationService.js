@@ -41,31 +41,22 @@ class ApplicationService {
   }
 
   /**
-   * Validate code format
-   * @param {string} code - Code to validate
-   * @returns {boolean} True if valid
+   * Validate code format — no longer needed, Code is auto-increment
+   * Kept for backward compatibility
    */
   validateCode(code) {
-    // 2-20 characters, alphanumeric and hyphen only
-    const codeRegex = /^[a-zA-Z0-9-]{2,20}$/;
-    return codeRegex.test(code);
+    return true;
   }
 
   /**
    * Create a new Application
    * @param {Object} data - Application data
-   * @param {string} data.code - Unique code (2-20 chars, alphanumeric + hyphen)
    * @param {string} data.name - Application name (1-200 chars)
    * @param {string} [data.description] - Application description
    * @returns {Promise<Object>} Created Application
    */
   async createApplication(data) {
     try {
-      // Validate code
-      if (!this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
       // Validate name
       if (!data.name || data.name.trim().length === 0 || data.name.length > 200) {
         throw new ValidationError('Name is required and must be 1-200 characters');
@@ -73,27 +64,17 @@ class ApplicationService {
 
       const pool = await db.getPool();
 
-      // Check for duplicate code
-      const codeCheck = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
-        .query('SELECT ApplicationId FROM Applications WHERE Code = @code');
-
-      if (codeCheck.recordset.length > 0) {
-        throw new ConflictError(`Application with code '${data.code}' already exists`);
-      }
-
-      // Create Application
+      // Create Application — Code is auto-increment, not passed
       const result = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
         .input('description', sql.NVarChar(sql.MAX), data.description || null)
         .query(`
-          INSERT INTO Applications (Code, Name, Description, IsActive, CreatedAt)
+          INSERT INTO Applications (Name, Description, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@code, @name, @description, 1, GETDATE())
+          VALUES (@name, @description, 1, GETDATE())
         `);
 
-      logger.info('Application created', { code: data.code });
+      logger.info('Application created', { name: data.name });
       return result.recordset[0];
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
@@ -123,22 +104,10 @@ class ApplicationService {
         throw new NotFoundError('Application not found');
       }
 
-      // Validate code if provided
-      if (data.code && !this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
+      // Validate code if provided — no-op since Code is auto-increment
+      // (kept for backward compatibility, no validation needed)
 
-      // Check for duplicate code if code is being changed
-      if (data.code) {
-        const codeCheck = await pool.request()
-          .input('code', sql.NVarChar(20), data.code)
-          .input('applicationId', sql.UniqueIdentifier, applicationId)
-          .query('SELECT ApplicationId FROM Applications WHERE Code = @code AND ApplicationId != @applicationId');
-
-        if (codeCheck.recordset.length > 0) {
-          throw new ConflictError(`Application with code '${data.code}' already exists`);
-        }
-      }
+      // Check for duplicate code if code is being changed — no-op since Code is auto-increment
 
       // Validate name if provided
       if (data.name !== undefined && (!data.name || data.name.trim().length === 0 || data.name.length > 200)) {
@@ -149,15 +118,11 @@ class ApplicationService {
         throw new ValidationError('isActive must be boolean');
       }
 
-      // Build update query
+      // Build update query — Code is auto-increment, never updated
       const updateFields = [];
       const request = pool.request();
       request.input('applicationId', sql.UniqueIdentifier, applicationId);
 
-      if (data.code !== undefined) {
-        updateFields.push('Code = @code');
-        request.input('code', sql.NVarChar(20), data.code);
-      }
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);

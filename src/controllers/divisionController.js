@@ -24,11 +24,6 @@ function handleServiceError(res, error, fallbackMessage) {
  * Validation rules for creating a division
  */
 const createDivisionValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -43,11 +38,6 @@ const createDivisionValidation = [
  */
 const updateDivisionValidation = [
   param('id').isUUID().withMessage('Division ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -218,7 +208,6 @@ async function downloadTemplate(req, res) {
 
     sheet.columns = [
       { header: 'BU Name', key: 'buName', width: 30 },
-      { header: 'Divisi Code', key: 'code', width: 20 },
       { header: 'Divisi Name', key: 'name', width: 40 },
       { header: 'Status', key: 'status', width: 15 },
     ];
@@ -229,11 +218,11 @@ async function downloadTemplate(req, res) {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.addRow({ buName: 'Corporate HO', code: 'ITD', name: 'IT Digital', status: 'Active' });
-    sheet.addRow({ buName: 'Main Dealer Jakarta', code: 'FIN', name: 'Finance', status: 'Active' });
+    sheet.addRow({ buName: 'Corporate HO', name: 'IT Digital', status: 'Active' });
+    sheet.addRow({ buName: 'Main Dealer Jakarta', name: 'Finance', status: 'Active' });
 
     sheet.addRow([]);
-    const noteRow = sheet.addRow(['Catatan: BU Name harus sesuai dengan data BU yang ada. Kolom Status diisi Active atau Inactive.']);
+    const noteRow = sheet.addRow(['Catatan: BU Name harus sesuai dengan data BU yang ada. Kolom Status diisi Active atau Inactive. Divisi Code di-generate otomatis.']);
     noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -271,14 +260,13 @@ async function uploadDivisions(req, res) {
     headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
 
     const buNameIdx = headers.indexOf('BU Name');
-    const codeIdx = headers.indexOf('Divisi Code');
     const nameIdx = headers.indexOf('Divisi Name');
     const statusIdx = headers.indexOf('Status');
 
-    if (buNameIdx === -1 || codeIdx === -1 || nameIdx === -1) {
+    if (buNameIdx === -1 || nameIdx === -1) {
       return res.status(400).json({
         success: false,
-        message: 'Format file tidak valid. Kolom yang diperlukan: BU Name, Divisi Code, Divisi Name, Status'
+        message: 'Format file tidak valid. Kolom yang diperlukan: BU Name, Divisi Name, Status'
       });
     }
 
@@ -286,13 +274,13 @@ async function uploadDivisions(req, res) {
     const sql = require('../database/sql-client');
     const db = require('../database/connection');
     const pool = await db.getPool();
-    const buResult = await pool.request().query('SELECT BusinessUnitId, Name, Code FROM BusinessUnits WHERE IsActive = 1');
+    const buResult = await pool.request().query('SELECT BusinessUnitId, Name FROM BusinessUnits WHERE IsActive = 1');
     const buByName = new Map(buResult.recordset.map(b => [b.Name.toLowerCase().trim(), b]));
 
-    // Build new workbook with 'Business Unit Code' column for bulkImportService
+    // Build new workbook with 'Business Unit Name' column for bulkImportService
     const newWorkbook = new ExcelJSLib.Workbook();
     const newSheet = newWorkbook.addWorksheet('Divisions');
-    newSheet.addRow(['Code', 'Name', 'Business Unit Code']);
+    newSheet.addRow(['Name', 'Business Unit Name']);
 
     let validRows = 0;
     const errors = [];
@@ -300,16 +288,15 @@ async function uploadDivisions(req, res) {
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // skip header
       const buName = String(row.getCell(buNameIdx + 1).value || '').trim();
-      const code = String(row.getCell(codeIdx + 1).value || '').trim();
       const name = String(row.getCell(nameIdx + 1).value || '').trim();
-      if (!buName && !code && !name) return; // skip empty rows
+      if (!buName && !name) return; // skip empty rows
 
       const bu = buByName.get(buName.toLowerCase());
       if (!bu) {
-        errors.push({ row: rowNumber, data: { buName, code, name }, errors: [`BU Name '${buName}' tidak ditemukan`] });
+        errors.push({ row: rowNumber, data: { buName, name }, errors: [`BU Name '${buName}' tidak ditemukan`] });
         return;
       }
-      newSheet.addRow([code, name, bu.Code]);
+      newSheet.addRow([name, buName]);
       validRows++;
     });
 

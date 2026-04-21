@@ -173,8 +173,8 @@ class ResponseService {
             sc.ShowProgressBar,
             sc.ShowPageNumbers,
             sc.MultiPage
-          FROM Surveys s
-          LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+          FROM Events s
+          LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
           WHERE s.SurveyId = @surveyId
         `);
 

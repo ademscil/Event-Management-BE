@@ -601,8 +601,8 @@ class EmailService {
                         s.QRCodeDataUrl,
                         s.TargetRespondents,
                         sc.HeroImageUrl
-                    FROM Surveys s
-                    LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+                    FROM Events s
+                    LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
                     WHERE s.SurveyId = @surveyId
                 `);
 
@@ -687,6 +687,24 @@ class EmailService {
                 cid: qrCid
             } : null;
 
+            // Logo attachment (CID inline)
+            const path = require('path');
+            const fs = require('fs');
+            const logoPath = path.join(__dirname, '../../public/assets/img/logo.png');
+            const logoCid = `aop-logo@csi.local`;
+            let logoAttachment = null;
+            try {
+                const logoBuffer = fs.readFileSync(logoPath);
+                logoAttachment = {
+                    filename: 'logo.png',
+                    content: logoBuffer,
+                    contentType: 'image/png',
+                    cid: logoCid
+                };
+            } catch {
+                logger.warn('Logo file not found, email will be sent without logo');
+            }
+
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
@@ -706,9 +724,14 @@ class EmailService {
                     qrCodeDataUrl,
                     qrCodeImageSrc: qrImageSrc,
                     embedCover,
-                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null
+                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
+                    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+                    logoCid: logoAttachment ? `cid:${logoCid}` : null
                 },
-                attachments: qrAttachment ? [qrAttachment] : [],
+                attachments: [
+                    ...(logoAttachment ? [logoAttachment] : []),
+                    ...(qrAttachment ? [qrAttachment] : [])
+                ],
                 surveyId,
                 emailType: 'Blast'
             }));
@@ -813,8 +836,8 @@ class EmailService {
                         s.EndDate,
                         s.SurveyLink,
                         sc.HeroImageUrl
-                    FROM Surveys s
-                    LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+                    FROM Events s
+                    LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
                     WHERE s.SurveyId = @surveyId
                 `);
 
@@ -898,6 +921,24 @@ class EmailService {
 
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
+            // Logo attachment (CID inline)
+            const pathMod = require('path');
+            const fsMod = require('fs');
+            const logoPathR = pathMod.join(__dirname, '../../public/assets/img/logo.png');
+            const logoCidR = `aop-logo@csi.local`;
+            let logoAttachmentR = null;
+            try {
+                const logoBufferR = fsMod.readFileSync(logoPathR);
+                logoAttachmentR = {
+                    filename: 'logo.png',
+                    content: logoBufferR,
+                    contentType: 'image/png',
+                    cid: logoCidR
+                };
+            } catch {
+                logger.warn('Logo file not found, reminder will be sent without logo');
+            }
+
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
@@ -912,8 +953,11 @@ class EmailService {
                     daysRemaining,
                     customMessage,
                     embedCover,
-                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null
+                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
+                    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+                    logoCid: logoAttachmentR ? `cid:${logoCidR}` : null
                 },
+                attachments: logoAttachmentR ? [logoAttachmentR] : [],
                 surveyId,
                 emailType: 'Reminder'
             }));

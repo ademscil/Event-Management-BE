@@ -73,8 +73,52 @@ class BusinessUnitService {
           VALUES (@name, 1, GETDATE())
         `);
 
+      const bu = result.recordset[0];
       logger.info('Business Unit created', { name: data.name });
-      return result.recordset[0];
+
+      // Auto-create Division + Department dengan nama sama untuk BU non-Corporate HO
+      const isCorporateHo = data.name.trim().toLowerCase() === 'corporate ho';
+      if (!isCorporateHo) {
+        try {
+          const buNameClean = data.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 12).toUpperCase();
+          const divCode = `DIV-${buNameClean}`;
+          const deptCode = `DEPT-${buNameClean}`;
+
+          const divResult = await pool.request()
+            .input('businessUnitId', sql.UniqueIdentifier, bu.BusinessUnitId)
+            .input('name', sql.NVarChar(200), data.name)
+            .input('code', sql.NVarChar(50), divCode)
+            .query(`
+              INSERT INTO Divisions (BusinessUnitId, Code, Name, IsActive, CreatedAt)
+              OUTPUT INSERTED.DivisionId
+              VALUES (@businessUnitId, @code, @name, 1, GETDATE())
+            `);
+
+          const divisionId = divResult.recordset[0].DivisionId;
+
+          await pool.request()
+            .input('divisionId', sql.UniqueIdentifier, divisionId)
+            .input('name', sql.NVarChar(200), data.name)
+            .input('code', sql.NVarChar(50), deptCode)
+            .query(`
+              INSERT INTO Departments (DivisionId, Code, Name, IsActive, CreatedAt)
+              VALUES (@divisionId, @code, @name, 1, GETDATE())
+            `);
+
+          logger.info('Auto-created Division and Department for new BU', {
+            buName: data.name,
+            divisionId,
+          });
+        } catch (autoCreateError) {
+          // Jangan gagalkan create BU jika auto-create divisi/dept gagal
+          logger.warn('Failed to auto-create Division/Department for BU', {
+            buName: data.name,
+            error: autoCreateError.message,
+          });
+        }
+      }
+
+      return bu;
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
         throw error;

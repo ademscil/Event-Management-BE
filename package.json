@@ -18,6 +18,8 @@
     "db:rollback": "node src/database/rollback.js",
     "db:backup": "node src/database/backup.js",
     "db:backup:diff": "node src/database/backup.js --differential",
+    "db:backup:verify": "node src/database/restore-verify.js",
+    "db:backup:list": "node src/database/restore-verify.js --list",
     "db:setup": "npm run db:init && npm run migrate && npm run db:seed",
     "db:use:show": "node scripts/switch-db-env.js --show",
     "db:use:office": "node scripts/switch-db-env.js office",

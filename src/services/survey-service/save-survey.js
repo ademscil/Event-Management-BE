@@ -4,7 +4,7 @@ const { NotFoundError, ValidationError } = require('./errors');
 async function syncSurveyConfiguration(transaction, surveyId, configuration) {
   const configCheck = await new sql.Request(transaction)
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT ConfigId FROM SurveyConfiguration WHERE SurveyId = @surveyId');
+    .query('SELECT ConfigId FROM EventConfiguration WHERE SurveyId = @surveyId');
 
   if (configuration) {
     const config = configuration;
@@ -82,7 +82,7 @@ async function syncSurveyConfiguration(transaction, surveyId, configuration) {
       if (updateFields.length > 0) {
         updateFields.push('UpdatedAt = GETDATE()');
         await request.query(`
-          UPDATE SurveyConfiguration
+          UPDATE EventConfiguration
           SET ${updateFields.join(', ')}
           WHERE SurveyId = @surveyId
         `);
@@ -106,7 +106,7 @@ async function syncSurveyConfiguration(transaction, surveyId, configuration) {
       .input('showPageNumbers', sql.Bit, config.showPageNumbers !== false)
       .input('multiPage', sql.Bit, config.multiPage === true)
       .query(`
-        INSERT INTO SurveyConfiguration (
+        INSERT INTO EventConfiguration (
           SurveyId, HeroTitle, HeroSubtitle, HeroImageUrl, LogoUrl,
           BackgroundColor, BackgroundImageUrl, PrimaryColor, SecondaryColor,
           FontFamily, ButtonStyle, ShowProgressBar, ShowPageNumbers, MultiPage,
@@ -129,7 +129,7 @@ async function syncSurveyConfiguration(transaction, surveyId, configuration) {
       .input('showPageNumbers', sql.Bit, true)
       .input('multiPage', sql.Bit, false)
       .query(`
-        INSERT INTO SurveyConfiguration (
+        INSERT INTO EventConfiguration (
           SurveyId, ShowProgressBar, ShowPageNumbers, MultiPage, CreatedAt
         )
         VALUES (
@@ -314,7 +314,7 @@ async function updateSurveyCore(transaction, data, existingSurvey, dependencies)
     request.input('updatedBy', sql.UniqueIdentifier, data.userId);
 
     const surveyResult = await request.query(`
-      UPDATE Surveys
+      UPDATE Events
       SET ${updateFields.join(', ')}
       OUTPUT INSERTED.*
       WHERE SurveyId = @surveyId
@@ -325,7 +325,7 @@ async function updateSurveyCore(transaction, data, existingSurvey, dependencies)
 
   const surveyResult = await new sql.Request(transaction)
     .input('surveyId', sql.UniqueIdentifier, data.surveyId)
-    .query('SELECT * FROM Surveys WHERE SurveyId = @surveyId');
+    .query('SELECT * FROM Events WHERE SurveyId = @surveyId');
 
   return surveyResult.recordset[0];
 }
@@ -377,7 +377,7 @@ async function createSurveyCore(transaction, data, dependencies) {
         OR (OBJECT_ID(N'dbo.Surveys', N'U') IS NOT NULL AND COL_LENGTH('dbo.Surveys', 'EventTypeId') IS NOT NULL)
       ) AND OBJECT_ID(N'dbo.EventTypes', N'U') IS NOT NULL
       BEGIN
-        INSERT INTO Surveys (
+        INSERT INTO Events (
           Title, Description, StartDate, EndDate, Status,
           AssignedAdminId, TargetRespondents, TargetScore,
           DuplicatePreventionEnabled, CreatedBy, CreatedAt, EventTypeId
@@ -392,7 +392,7 @@ async function createSurveyCore(transaction, data, dependencies) {
       END
       ELSE
       BEGIN
-        INSERT INTO Surveys (
+        INSERT INTO Events (
           Title, Description, StartDate, EndDate, Status,
           AssignedAdminId, TargetRespondents, TargetScore,
           DuplicatePreventionEnabled, CreatedBy, CreatedAt
@@ -412,7 +412,7 @@ async function createSurveyCore(transaction, data, dependencies) {
 async function loadExistingSurveyForSave(transaction, surveyId) {
   const surveyCheck = await new sql.Request(transaction)
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT SurveyId, Status, StartDate, EndDate FROM Surveys WHERE SurveyId = @surveyId');
+    .query('SELECT SurveyId, Status, StartDate, EndDate FROM Events WHERE SurveyId = @surveyId');
 
   if (surveyCheck.recordset.length === 0) {
     throw new NotFoundError('Survey not found');

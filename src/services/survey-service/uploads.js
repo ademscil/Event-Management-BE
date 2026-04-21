@@ -18,8 +18,8 @@ async function saveFile(buffer, filename, subdirectory, { config, fs, logger }) 
   const filePath = path.join(fullPath, filename);
   await fs.writeFile(filePath, buffer);
 
-  const baseUrl = config.baseUrl || 'http://localhost:3000';
-  return `${baseUrl}/uploads/${subdirectory}/${filename}`;
+  // Simpan sebagai path relatif agar bisa diakses via FE proxy /uploads/...
+  return `/uploads/${subdirectory}/${filename}`;
 }
 
 async function deleteFile(fileUrl, { config, fs, logger }) {
@@ -71,7 +71,7 @@ async function uploadSurveyConfigurationImage({
 
   const configResult = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT * FROM SurveyConfiguration WHERE SurveyId = @surveyId');
+    .query('SELECT * FROM EventConfiguration WHERE SurveyId = @surveyId');
 
   let updatedConfig;
 
@@ -82,7 +82,7 @@ async function uploadSurveyConfigurationImage({
     await pool.request()
       .input('surveyId', sql.UniqueIdentifier, surveyId)
       .input(configKey, sql.NVarChar(500), imageUrl)
-      .query(`UPDATE SurveyConfiguration SET ${columnName} = @${configKey} WHERE SurveyId = @surveyId`);
+      .query(`UPDATE EventConfiguration SET ${columnName} = @${configKey} WHERE SurveyId = @surveyId`);
 
     if (oldImageUrl) {
       await deleteFile(oldImageUrl);
@@ -100,7 +100,7 @@ async function uploadSurveyConfigurationImage({
       .input('surveyId', sql.UniqueIdentifier, surveyId)
       .input(configKey, sql.NVarChar(500), imageUrl)
       .query(`
-        INSERT INTO SurveyConfiguration (ConfigId, SurveyId, ${columnName})
+        INSERT INTO EventConfiguration (ConfigId, SurveyId, ${columnName})
         VALUES (@configId, @surveyId, @${configKey})
       `);
 

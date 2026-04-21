@@ -23,11 +23,6 @@ function handleServiceError(res, error, fallbackMessage) {
  * Validation rules for creating a function
  */
 const createFunctionValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -42,11 +37,6 @@ const createFunctionValidation = [
  */
 const updateFunctionValidation = [
   param('id').isUUID().withMessage('Function ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -75,8 +65,8 @@ async function createFunction(req, res) {
       });
     }
 
-    const { code, name, deptId } = req.body;
-    const result = await functionService.createFunction({ code, name, deptId });
+    const { name, deptId } = req.body;
+    const result = await functionService.createFunction({ name, deptId });
 
     res.status(201).json({
       success: true,
@@ -209,7 +199,6 @@ async function downloadTemplate(req, res) {
     const sheet = workbook.addWorksheet('Functions');
 
     sheet.columns = [
-      { header: 'Function Code', key: 'code', width: 20 },
       { header: 'Function Name', key: 'name', width: 40 },
       { header: 'Status', key: 'status', width: 15 },
     ];
@@ -220,11 +209,11 @@ async function downloadTemplate(req, res) {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.addRow({ code: 'INF', name: 'Infrastructure', status: 'Active' });
-    sheet.addRow({ code: 'DEV', name: 'Development', status: 'Active' });
+    sheet.addRow({ name: 'Infrastructure', status: 'Active' });
+    sheet.addRow({ name: 'Development', status: 'Active' });
 
     sheet.addRow([]);
-    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive.']);
+    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. Function Code di-generate otomatis.']);
     noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -257,29 +246,27 @@ async function uploadFunctions(req, res) {
     const headers = [];
     headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
 
-    const codeIdx = headers.indexOf('Function Code');
     const nameIdx = headers.indexOf('Function Name');
 
-    if (codeIdx === -1 || nameIdx === -1) {
+    if (nameIdx === -1) {
       return res.status(400).json({
         success: false,
-        message: 'Format file tidak valid. Kolom yang diperlukan: Function Code, Function Name, Status'
+        message: 'Format file tidak valid. Kolom yang diperlukan: Function Name, Status'
       });
     }
 
     // Build new workbook with expected column names for bulkImportService
     const newWorkbook = new ExcelJSLib.Workbook();
     const newSheet = newWorkbook.addWorksheet('Functions');
-    newSheet.addRow(['Code', 'Name']);
+    newSheet.addRow(['Name']);
 
     let validRows = 0;
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const code = String(row.getCell(codeIdx + 1).value || '').trim();
       const name = String(row.getCell(nameIdx + 1).value || '').trim();
-      if (!code && !name) return;
-      newSheet.addRow([code, name]);
+      if (!name) return;
+      newSheet.addRow([name]);
       validRows++;
     });
 

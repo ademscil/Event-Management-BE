@@ -31,14 +31,14 @@ async function syncSurveyAdminAssignments(connection, surveyId, assignedAdminIds
 
   await makeRequest()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('DELETE FROM SurveyAdminAssignments WHERE SurveyId = @surveyId');
+    .query('DELETE FROM EventAdminAssignments WHERE SurveyId = @surveyId');
 
   for (const adminId of assignedAdminIds) {
     await makeRequest()
       .input('surveyId', sql.UniqueIdentifier, surveyId)
       .input('adminUserId', sql.UniqueIdentifier, adminId)
       .query(`
-        INSERT INTO SurveyAdminAssignments (SurveyId, AdminUserId, CreatedAt)
+        INSERT INTO EventAdminAssignments (SurveyId, AdminUserId, CreatedAt)
         VALUES (@surveyId, @adminUserId, GETDATE())
       `);
   }

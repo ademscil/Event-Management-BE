@@ -23,11 +23,6 @@ function handleServiceError(res, error, fallbackMessage) {
  * Validation rules for creating an application
  */
 const createApplicationValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -46,11 +41,6 @@ const createApplicationValidation = [
  */
 const updateApplicationValidation = [
   param('id').isUUID().withMessage('Application ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -211,7 +201,6 @@ async function downloadTemplate(req, res) {
     const sheet = workbook.addWorksheet('Applications');
 
     sheet.columns = [
-      { header: 'App Code', key: 'code', width: 20 },
       { header: 'App Name', key: 'name', width: 40 },
       { header: 'Description', key: 'description', width: 50 },
       { header: 'Status', key: 'status', width: 15 },
@@ -223,11 +212,11 @@ async function downloadTemplate(req, res) {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.addRow({ code: 'B2B', name: 'B2B Ordering', description: 'Business to Business ordering system', status: 'Active' });
-    sheet.addRow({ code: 'ERP', name: 'ERP System', description: 'Enterprise Resource Planning', status: 'Active' });
+    sheet.addRow({ name: 'B2B Ordering', description: 'Business to Business ordering system', status: 'Active' });
+    sheet.addRow({ name: 'ERP System', description: 'Enterprise Resource Planning', status: 'Active' });
 
     sheet.addRow([]);
-    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. Description bersifat opsional.']);
+    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. Description bersifat opsional. App Code di-generate otomatis.']);
     noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -260,31 +249,29 @@ async function uploadApplications(req, res) {
     const headers = [];
     headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
 
-    const codeIdx = headers.indexOf('App Code');
     const nameIdx = headers.indexOf('App Name');
     const descIdx = headers.indexOf('Description');
 
-    if (codeIdx === -1 || nameIdx === -1) {
+    if (nameIdx === -1) {
       return res.status(400).json({
         success: false,
-        message: 'Format file tidak valid. Kolom yang diperlukan: App Code, App Name, Description, Status'
+        message: 'Format file tidak valid. Kolom yang diperlukan: App Name, Description, Status'
       });
     }
 
     // Build new workbook with expected column names for bulkImportService
     const newWorkbook = new ExcelJSLib.Workbook();
     const newSheet = newWorkbook.addWorksheet('Applications');
-    newSheet.addRow(['Code', 'Name', 'Description']);
+    newSheet.addRow(['Name', 'Description']);
 
     let validRows = 0;
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const code = String(row.getCell(codeIdx + 1).value || '').trim();
       const name = String(row.getCell(nameIdx + 1).value || '').trim();
       const desc = descIdx !== -1 ? String(row.getCell(descIdx + 1).value || '').trim() : '';
-      if (!code && !name) return;
-      newSheet.addRow([code, name, desc || null]);
+      if (!name) return;
+      newSheet.addRow([name, desc || null]);
       validRows++;
     });
 

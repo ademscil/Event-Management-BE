@@ -41,21 +41,17 @@ class DepartmentService {
   }
 
   /**
-   * Validate code format
-   * @param {string} code - Code to validate
-   * @returns {boolean} True if valid
+   * Validate code format — no longer needed, Code is auto-increment
+   * Kept for backward compatibility
    */
   validateCode(code) {
-    // 2-20 characters, alphanumeric and hyphen only
-    const codeRegex = /^[a-zA-Z0-9-]{2,20}$/;
-    return codeRegex.test(code);
+    return true;
   }
 
   /**
    * Create a new Department
    * @param {Object} data - Department data
    * @param {string} data.divisionId - Parent Division ID (required)
-   * @param {string} data.code - Unique code (2-20 chars, alphanumeric + hyphen)
    * @param {string} data.name - Department name (1-200 chars)
    * @returns {Promise<Object>} Created Department
    */
@@ -64,11 +60,6 @@ class DepartmentService {
       // Validate required parent
       if (!data.divisionId) {
         throw new ValidationError('Division ID is required');
-      }
-
-      // Validate code
-      if (!this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
       }
 
       // Validate name
@@ -87,27 +78,17 @@ class DepartmentService {
         throw new ValidationError('Parent Division does not exist or is inactive');
       }
 
-      // Check for duplicate code
-      const codeCheck = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
-        .query('SELECT DepartmentId FROM Departments WHERE Code = @code');
-
-      if (codeCheck.recordset.length > 0) {
-        throw new ConflictError(`Department with code '${data.code}' already exists`);
-      }
-
-      // Create Department
+      // Create Department — Code is auto-increment, not passed
       const result = await pool.request()
         .input('divisionId', sql.UniqueIdentifier, data.divisionId)
-        .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
         .query(`
-          INSERT INTO Departments (DivisionId, Code, Name, IsActive, CreatedAt)
+          INSERT INTO Departments (DivisionId, Name, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@divisionId, @code, @name, 1, GETDATE())
+          VALUES (@divisionId, @name, 1, GETDATE())
         `);
 
-      logger.info('Department created', { code: data.code, divisionId: data.divisionId });
+      logger.info('Department created', { name: data.name, divisionId: data.divisionId });
       return result.recordset[0];
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
@@ -148,23 +129,6 @@ class DepartmentService {
         }
       }
 
-      // Validate code if provided
-      if (data.code && !this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
-      // Check for duplicate code if code is being changed
-      if (data.code) {
-        const codeCheck = await pool.request()
-          .input('code', sql.NVarChar(20), data.code)
-          .input('departmentId', sql.UniqueIdentifier, departmentId)
-          .query('SELECT DepartmentId FROM Departments WHERE Code = @code AND DepartmentId != @departmentId');
-
-        if (codeCheck.recordset.length > 0) {
-          throw new ConflictError(`Department with code '${data.code}' already exists`);
-        }
-      }
-
       // Validate name if provided
       if (data.name !== undefined && (!data.name || data.name.trim().length === 0 || data.name.length > 200)) {
         throw new ValidationError('Name is required and must be 1-200 characters');
@@ -174,7 +138,7 @@ class DepartmentService {
         throw new ValidationError('isActive must be boolean');
       }
 
-      // Build update query
+      // Build update query — Code is auto-increment, never updated
       const updateFields = [];
       const request = pool.request();
       request.input('departmentId', sql.UniqueIdentifier, departmentId);
@@ -182,10 +146,6 @@ class DepartmentService {
       if (data.divisionId !== undefined) {
         updateFields.push('DivisionId = @divisionId');
         request.input('divisionId', sql.UniqueIdentifier, data.divisionId);
-      }
-      if (data.code !== undefined) {
-        updateFields.push('Code = @code');
-        request.input('code', sql.NVarChar(20), data.code);
       }
       if (data.name !== undefined) {
         updateFields.push('Name = @name');

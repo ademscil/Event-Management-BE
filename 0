@@ -1,0 +1,4 @@
+Loaded configuration from: D:\AOP\csi-dev-BE\.env.development
+Configuration loaded successfully for environment: development
+2026-04-21 11:15:54 [[32MINFO[39M] [csi-portal]: Connecting to database... {"environment":"development","hostname":"AOPJKT0ITVN1015","server":"10.14.90.210\\DEV","database":"CSI"}
+2026-04-21 11:15:55 [[32MINFO[39M] [csi-portal]: Database connection established {"environment":"development","hostname":"AOPJKT0ITVN1015"}

@@ -24,11 +24,6 @@ function handleServiceError(res, error, fallbackMessage) {
  * Validation rules for creating a department
  */
 const createDepartmentValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -43,11 +38,6 @@ const createDepartmentValidation = [
  */
 const updateDepartmentValidation = [
   param('id').isUUID().withMessage('Department ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -217,8 +207,7 @@ async function downloadTemplate(req, res) {
     const sheet = workbook.addWorksheet('Departments');
 
     sheet.columns = [
-      { header: 'Divisi Code', key: 'divisiCode', width: 20 },
-      { header: 'Department Code', key: 'code', width: 20 },
+      { header: 'Divisi Name', key: 'divisiName', width: 30 },
       { header: 'Department Name', key: 'name', width: 40 },
       { header: 'Status', key: 'status', width: 15 },
     ];
@@ -229,11 +218,11 @@ async function downloadTemplate(req, res) {
       cell.alignment = { vertical: 'middle', horizontal: 'center' };
     });
 
-    sheet.addRow({ divisiCode: 'ITD', code: 'ITD-01', name: 'IT Digital Development', status: 'Active' });
-    sheet.addRow({ divisiCode: 'FIN', code: 'FIN-01', name: 'Finance Operations', status: 'Active' });
+    sheet.addRow({ divisiName: 'IT Digital', name: 'IT Digital Development', status: 'Active' });
+    sheet.addRow({ divisiName: 'Finance', name: 'Finance Operations', status: 'Active' });
 
     sheet.addRow([]);
-    const noteRow = sheet.addRow(['Catatan: Divisi Code harus sesuai dengan data Divisi yang ada. Kolom Status diisi Active atau Inactive.']);
+    const noteRow = sheet.addRow(['Catatan: Divisi Name harus sesuai dengan data Divisi yang ada. Kolom Status diisi Active atau Inactive. Department Code di-generate otomatis.']);
     noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -266,31 +255,29 @@ async function uploadDepartments(req, res) {
     const headers = [];
     headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
 
-    const divCodeIdx = headers.indexOf('Divisi Code');
-    const codeIdx = headers.indexOf('Department Code');
+    const divNameIdx = headers.indexOf('Divisi Name');
     const nameIdx = headers.indexOf('Department Name');
 
-    if (divCodeIdx === -1 || codeIdx === -1 || nameIdx === -1) {
+    if (divNameIdx === -1 || nameIdx === -1) {
       return res.status(400).json({
         success: false,
-        message: 'Format file tidak valid. Kolom yang diperlukan: Divisi Code, Department Code, Department Name, Status'
+        message: 'Format file tidak valid. Kolom yang diperlukan: Divisi Name, Department Name, Status'
       });
     }
 
-    // Build new workbook with 'Division Code' column for bulkImportService
+    // Build new workbook with 'Division Name' column for bulkImportService
     const newWorkbook = new ExcelJSLib.Workbook();
     const newSheet = newWorkbook.addWorksheet('Departments');
-    newSheet.addRow(['Code', 'Name', 'Division Code']);
+    newSheet.addRow(['Name', 'Division Name']);
 
     let validRows = 0;
 
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return;
-      const divCode = String(row.getCell(divCodeIdx + 1).value || '').trim();
-      const code = String(row.getCell(codeIdx + 1).value || '').trim();
+      const divName = String(row.getCell(divNameIdx + 1).value || '').trim();
       const name = String(row.getCell(nameIdx + 1).value || '').trim();
-      if (!divCode && !code && !name) return;
-      newSheet.addRow([code, name, divCode]);
+      if (!divName && !name) return;
+      newSheet.addRow([name, divName]);
       validRows++;
     });
 

@@ -264,7 +264,15 @@ async function uploadQuestionImage(req, res) {
       });
     }
 
-    const imageUrl = await surveyService.uploadQuestionImage(questionId, req.file);
+    const question = await surveyService.uploadQuestionImage(questionId, req.file);
+    const imageUrl = question?.ImageUrl || null;
+
+    if (!imageUrl) {
+      return res.status(500).json({
+        error: 'Upload failed',
+        message: 'Image uploaded but URL could not be retrieved'
+      });
+    }
 
     return res.json({
       success: true,

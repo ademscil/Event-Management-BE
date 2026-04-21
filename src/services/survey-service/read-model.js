@@ -22,7 +22,7 @@ async function resolveSurveyIdentifier(db, sql, NotFoundError, surveyIdentifier)
     .input('surveyNo', sql.Int, surveyNo)
     .query(`
       SELECT TOP 1 SurveyId
-      FROM Surveys
+      FROM Events
       WHERE SurveyNo = @surveyNo
     `);
 
@@ -46,28 +46,28 @@ async function getSurveys(db, sql, filter = {}) {
       END AS EffectiveStatus,
       COALESCE(NULLIF(STUFF((
         SELECT ', ' + u2.DisplayName
-        FROM SurveyAdminAssignments saa2
+        FROM EventAdminAssignments saa2
         INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
         WHERE saa2.SurveyId = s.SurveyId
         FOR XML PATH(''), TYPE
       ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), ''), admin.DisplayName) AS AssignedAdminName,
       NULLIF(STUFF((
         SELECT ', ' + u2.DisplayName
-        FROM SurveyAdminAssignments saa2
+        FROM EventAdminAssignments saa2
         INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
         WHERE saa2.SurveyId = s.SurveyId
         FOR XML PATH(''), TYPE
       ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS AssignedAdminNames,
       NULLIF(STUFF((
         SELECT ', ' + u2.Username
-        FROM SurveyAdminAssignments saa2
+        FROM EventAdminAssignments saa2
         INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
         WHERE saa2.SurveyId = s.SurveyId
         FOR XML PATH(''), TYPE
       ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS AssignedAdminUsernames,
       NULLIF(STUFF((
         SELECT ',' + CAST(saa2.AdminUserId AS NVARCHAR(36))
-        FROM SurveyAdminAssignments saa2
+        FROM EventAdminAssignments saa2
         WHERE saa2.SurveyId = s.SurveyId
         FOR XML PATH(''), TYPE
       ).value('.', 'NVARCHAR(MAX)'), 1, 1, ''), '') AS AssignedAdminIdsCsv,
@@ -76,7 +76,7 @@ async function getSurveys(db, sql, filter = {}) {
       sc.LogoUrl, sc.BackgroundColor, sc.BackgroundImageUrl,
       sc.PrimaryColor, sc.SecondaryColor, sc.FontFamily, sc.ButtonStyle,
       sc.ShowProgressBar, sc.ShowPageNumbers, sc.MultiPage
-    FROM Surveys s
+    FROM Events s
     LEFT JOIN (
       SELECT
         SurveyId,
@@ -96,7 +96,7 @@ async function getSurveys(db, sql, filter = {}) {
       GROUP BY SurveyId
     ) resp ON resp.SurveyId = s.SurveyId
     LEFT JOIN Users admin ON admin.UserId = s.AssignedAdminId
-    LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+    LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
     WHERE 1=1
   `;
 
@@ -109,7 +109,7 @@ async function getSurveys(db, sql, filter = {}) {
     query += ` AND (
       EXISTS (
         SELECT 1
-        FROM SurveyAdminAssignments saaFilter
+        FROM EventAdminAssignments saaFilter
         INNER JOIN Users assignedFilterUser ON assignedFilterUser.UserId = saaFilter.AdminUserId
         WHERE saaFilter.SurveyId = s.SurveyId
           AND (
@@ -214,28 +214,28 @@ async function getSurveyById(db, sql, NotFoundError, surveyIdentifier) {
         END AS EffectiveStatus,
         COALESCE(NULLIF(STUFF((
           SELECT ', ' + u2.DisplayName
-          FROM SurveyAdminAssignments saa2
+          FROM EventAdminAssignments saa2
           INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
           WHERE saa2.SurveyId = s.SurveyId
           FOR XML PATH(''), TYPE
         ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), ''), admin.DisplayName) AS AssignedAdminName,
         NULLIF(STUFF((
           SELECT ', ' + u2.DisplayName
-          FROM SurveyAdminAssignments saa2
+          FROM EventAdminAssignments saa2
           INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
           WHERE saa2.SurveyId = s.SurveyId
           FOR XML PATH(''), TYPE
         ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS AssignedAdminNames,
         NULLIF(STUFF((
           SELECT ', ' + u2.Username
-          FROM SurveyAdminAssignments saa2
+          FROM EventAdminAssignments saa2
           INNER JOIN Users u2 ON u2.UserId = saa2.AdminUserId
           WHERE saa2.SurveyId = s.SurveyId
           FOR XML PATH(''), TYPE
         ).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS AssignedAdminUsernames,
         NULLIF(STUFF((
           SELECT ',' + CAST(saa2.AdminUserId AS NVARCHAR(36))
-          FROM SurveyAdminAssignments saa2
+          FROM EventAdminAssignments saa2
           WHERE saa2.SurveyId = s.SurveyId
           FOR XML PATH(''), TYPE
         ).value('.', 'NVARCHAR(MAX)'), 1, 1, ''), '') AS AssignedAdminIdsCsv,
@@ -243,9 +243,9 @@ async function getSurveyById(db, sql, NotFoundError, surveyIdentifier) {
         sc.LogoUrl, sc.BackgroundColor, sc.BackgroundImageUrl,
         sc.PrimaryColor, sc.SecondaryColor, sc.FontFamily, sc.ButtonStyle,
         sc.ShowProgressBar, sc.ShowPageNumbers, sc.MultiPage
-      FROM Surveys s
+      FROM Events s
       LEFT JOIN Users admin ON admin.UserId = s.AssignedAdminId
-      LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+      LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
       WHERE s.SurveyId = @surveyId
     `);
 
@@ -329,14 +329,14 @@ async function updateSurveyConfig(db, sql, errors, surveyIdentifier, config) {
 
   const surveyCheck = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT SurveyId FROM Surveys WHERE SurveyId = @surveyId');
+    .query('SELECT SurveyId FROM Events WHERE SurveyId = @surveyId');
   if (surveyCheck.recordset.length === 0) {
     throw new NotFoundError('Survey not found');
   }
 
   const configCheck = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT ConfigId FROM SurveyConfiguration WHERE SurveyId = @surveyId');
+    .query('SELECT ConfigId FROM EventConfiguration WHERE SurveyId = @surveyId');
   if (configCheck.recordset.length === 0) {
     throw new NotFoundError('Survey configuration not found');
   }
@@ -404,7 +404,7 @@ async function updateSurveyConfig(db, sql, errors, surveyIdentifier, config) {
 
   updateFields.push('UpdatedAt = GETDATE()');
   const result = await request.query(`
-    UPDATE SurveyConfiguration
+    UPDATE EventConfiguration
     SET ${updateFields.join(', ')}
     OUTPUT INSERTED.*
     WHERE SurveyId = @surveyId

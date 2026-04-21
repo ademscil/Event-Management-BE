@@ -45,10 +45,9 @@ async function createSurvey(db, sql, logger, publishCycleService, ValidationErro
       .query(`
         IF (
           (OBJECT_ID(N'dbo.Events', N'U') IS NOT NULL AND COL_LENGTH('dbo.Events', 'EventTypeId') IS NOT NULL)
-          OR (OBJECT_ID(N'dbo.Surveys', N'U') IS NOT NULL AND COL_LENGTH('dbo.Surveys', 'EventTypeId') IS NOT NULL)
         ) AND OBJECT_ID(N'dbo.EventTypes', N'U') IS NOT NULL
         BEGIN
-          INSERT INTO Surveys (
+          INSERT INTO Events (
             Title, Description, StartDate, EndDate, Status,
             AssignedAdminId, TargetRespondents, TargetScore,
             DuplicatePreventionEnabled, CreatedBy, CreatedAt, EventTypeId
@@ -63,7 +62,7 @@ async function createSurvey(db, sql, logger, publishCycleService, ValidationErro
         END
         ELSE
         BEGIN
-          INSERT INTO Surveys (
+          INSERT INTO Events (
             Title, Description, StartDate, EndDate, Status,
             AssignedAdminId, TargetRespondents, TargetScore,
             DuplicatePreventionEnabled, CreatedBy, CreatedAt
@@ -100,7 +99,7 @@ async function createSurvey(db, sql, logger, publishCycleService, ValidationErro
       .input('showPageNumbers', sql.Bit, config.showPageNumbers !== false)
       .input('multiPage', sql.Bit, config.multiPage === true)
       .query(`
-        INSERT INTO SurveyConfiguration (
+        INSERT INTO EventConfiguration (
           SurveyId, HeroTitle, HeroSubtitle, HeroImageUrl, LogoUrl,
           BackgroundColor, BackgroundImageUrl, PrimaryColor, SecondaryColor,
           FontFamily, ButtonStyle, ShowProgressBar, ShowPageNumbers, MultiPage,
@@ -143,7 +142,7 @@ async function updateSurvey(db, sql, logger, publishCycleService, errors, helper
 
   const surveyCheck = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT SurveyId, Status, StartDate, EndDate FROM Surveys WHERE SurveyId = @surveyId');
+    .query('SELECT SurveyId, Status, StartDate, EndDate FROM Events WHERE SurveyId = @surveyId');
 
   if (surveyCheck.recordset.length === 0) {
     throw new NotFoundError('Survey not found');
@@ -210,7 +209,7 @@ async function updateSurvey(db, sql, logger, publishCycleService, errors, helper
     updateFields.push('UpdatedAt = GETDATE()');
 
     const result = await request.query(`
-      UPDATE Surveys
+      UPDATE Events
       SET ${updateFields.join(', ')}
       OUTPUT INSERTED.*
       WHERE SurveyId = @surveyId
@@ -240,7 +239,7 @@ async function deleteSurvey(db, sql, logger, errors, surveyId) {
 
   const surveyCheck = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('SELECT SurveyId FROM Surveys WHERE SurveyId = @surveyId');
+    .query('SELECT SurveyId FROM Events WHERE SurveyId = @surveyId');
   if (surveyCheck.recordset.length === 0) {
     throw new NotFoundError('Survey not found');
   }
@@ -254,11 +253,11 @@ async function deleteSurvey(db, sql, logger, errors, surveyId) {
 
   const assignmentDeleteResult = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('DELETE FROM SurveyAdminAssignments WHERE SurveyId = @surveyId');
+    .query('DELETE FROM EventAdminAssignments WHERE SurveyId = @surveyId');
 
   const result = await pool.request()
     .input('surveyId', sql.UniqueIdentifier, surveyId)
-    .query('DELETE FROM Surveys WHERE SurveyId = @surveyId');
+    .query('DELETE FROM Events WHERE SurveyId = @surveyId');
 
   const affectedRows = result?.rowsAffected?.[0] ?? assignmentDeleteResult?.rowsAffected?.[0] ?? 0;
   logger.info('Survey deleted', { surveyId });

@@ -240,8 +240,12 @@ class ReportService {
         INNER JOIN Divisions d ON r.DivisionId = d.DivisionId
         INNER JOIN Departments dept ON r.DepartmentId = dept.DepartmentId
         INNER JOIN Applications a ON r.ApplicationId = a.ApplicationId
-        LEFT JOIN FunctionApplicationMappings fam ON fam.ApplicationId = a.ApplicationId
-        LEFT JOIN Functions f ON f.FunctionId = fam.FunctionId
+        LEFT JOIN (
+          SELECT fam2.ApplicationId, MIN(fam2.FunctionId) AS FunctionId
+          FROM FunctionApplicationMappings fam2
+          GROUP BY fam2.ApplicationId
+        ) fam_single ON fam_single.ApplicationId = a.ApplicationId
+        LEFT JOIN Functions f ON f.FunctionId = fam_single.FunctionId
         WHERE ${whereClause}
         ORDER BY r.SubmittedAt DESC, q.DisplayOrder
       `;

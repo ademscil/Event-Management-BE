@@ -132,7 +132,7 @@ app.get('/s/:shortCode', async (req, res) => {
       .input('prefix', sql.NVarChar(8), shortCode.toLowerCase())
       .query(`
         SELECT TOP 2 SurveyId
-        FROM Surveys
+        FROM Events
         WHERE LOWER(CONVERT(NVARCHAR(36), SurveyId)) LIKE @prefix + '%'
       `);
 
