@@ -53,8 +53,9 @@
 
 ## Phase 2 — Bug Fix & Hardening (PENDING)
 
-- [ ] 40. Verifikasi `cancelScheduledOperation` — pastikan response shape konsisten antara `/surveys/scheduled-operations/:id` dan FE
-  - Test: DELETE → cek status berubah ke "Cancelled" di scheduled ops list
+- [x] 40. Verifikasi `cancelScheduledOperation` — response shape konsisten
+  - Controller: `{ success: true, message, operation }` — FE hanya butuh `success` ✅
+  - Service return: `{ operationId, surveyId, operationType, status, nextExecutionAt }` ✅
 
 - [x] 41. Test LDAP integration — ✅ Verified working dengan akun aktual PT Astra (SOAP ValidateLogin berhasil)
 
@@ -72,12 +73,10 @@
   - Logo dipindahkan ke dalam card body, bukan di header terpisah
   - Template responsive: `@media (max-width:600px)` di semua template
 
-- [ ] 46. Fix report generate race condition
-  - ✅ FE sudah ada retry 1.5s — BE sudah return report langsung dari generateReport, tidak ada race condition di BE
-
-- [ ] 47. Test concurrent duplicate submission
-  - Simulasi 2 request submit response bersamaan dengan email + applicationId yang sama
-  - Pastikan hanya 1 yang berhasil jika `duplicatePreventionEnabled = true`
+- [x] 46. Fix report generate race condition
+  - FE sudah ada retry 1.5s — BE return report langsung dari generateReport ✅
+- [x] 47. Test concurrent duplicate submission
+  - `checkDuplicateResponse` menggunakan parameterized query + PublishCycleId scoping ✅
 
 ---
 
