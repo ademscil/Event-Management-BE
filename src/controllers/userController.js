@@ -3,6 +3,11 @@ const userService = require('../services/userService');
 const logger = require('../config/logger');
 const ExcelJS = require('exceljs');
 
+const userIdentifierValidation = param('id')
+  .trim()
+  .notEmpty().withMessage('User identifier is required')
+  .isLength({ max: 50 }).withMessage('User identifier is too long');
+
 /**
  * Validation rules for creating a user
  */
@@ -55,7 +60,7 @@ const createUserValidation = [
  * Validation rules for updating a user
  */
 const updateUserValidation = [
-  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  userIdentifierValidation,
   body('username')
     .optional()
     .trim()
@@ -101,7 +106,7 @@ const updateUserValidation = [
  * Validation rules for toggling LDAP
  */
 const toggleLDAPValidation = [
-  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  userIdentifierValidation,
   body('useLDAP')
     .isBoolean().withMessage('useLDAP must be a boolean')
 ];
@@ -110,7 +115,7 @@ const toggleLDAPValidation = [
  * Validation rules for setting password
  */
 const setPasswordValidation = [
-  param('id').isUUID().withMessage('User ID must be a valid UUID'),
+  userIdentifierValidation,
   body('password')
     .notEmpty().withMessage('Password is required')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
@@ -143,6 +148,12 @@ async function createUser(req, res) {
 
   } catch (error) {
     logger.error('Create user controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while creating user'
@@ -208,6 +219,12 @@ async function getUserById(req, res) {
 
   } catch (error) {
     logger.error('Get user by ID controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while fetching user'
@@ -244,6 +261,12 @@ async function updateUser(req, res) {
 
   } catch (error) {
     logger.error('Update user controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while updating user'
@@ -270,6 +293,12 @@ async function deactivateUser(req, res) {
 
   } catch (error) {
     logger.error('Deactivate user controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while deactivating user'
@@ -306,6 +335,12 @@ async function toggleUserLDAP(req, res) {
 
   } catch (error) {
     logger.error('Toggle LDAP controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while toggling LDAP'
@@ -341,6 +376,12 @@ async function setUserPassword(req, res) {
 
   } catch (error) {
     logger.error('Set password controller error:', error);
+    if (error?.statusCode) {
+      return res.status(error.statusCode).json({
+        error: error.name || 'Request failed',
+        message: error.message
+      });
+    }
     res.status(500).json({
       error: 'Internal server error',
       message: 'An error occurred while setting password'

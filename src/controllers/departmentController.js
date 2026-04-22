@@ -1,16 +1,29 @@
 const { body, param, query, validationResult } = require('express-validator');
 const departmentService = require('../services/departmentService');
+const bulkImportService = require('../services/bulkImportService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
+
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
 
 /**
  * Validation rules for creating a department
  */
 const createDepartmentValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -25,11 +38,6 @@ const createDepartmentValidation = [
  */
 const updateDepartmentValidation = [
   param('id').isUUID().withMessage('Department ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -59,27 +67,16 @@ async function createDepartment(req, res) {
     }
 
     const departmentData = req.body;
-    const result = await departmentService.createDepartment(departmentData);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department creation failed',
-        message: result.errorMessage
-      });
-    }
+    const department = await departmentService.createDepartment(departmentData);
 
     res.status(201).json({
       success: true,
       message: 'Department created successfully',
-      department: result.department
+      department
     });
 
   } catch (error) {
-    logger.error('Create department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating department'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating department');
   }
 }
 
@@ -166,27 +163,16 @@ async function updateDepartment(req, res) {
     const departmentId = req.params.id;
     const updates = req.body;
 
-    const result = await departmentService.updateDepartment(departmentId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department update failed',
-        message: result.errorMessage
-      });
-    }
+    const department = await departmentService.updateDepartment(departmentId, updates);
 
     res.json({
       success: true,
       message: 'Department updated successfully',
-      department: result.department
+      department
     });
 
   } catch (error) {
-    logger.error('Update department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating department'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating department');
   }
 }
 
@@ -199,14 +185,7 @@ async function updateDepartment(req, res) {
 async function deleteDepartment(req, res) {
   try {
     const departmentId = req.params.id;
-    const result = await departmentService.deleteDepartment(departmentId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Department deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await departmentService.deleteDepartment(departmentId);
 
     res.json({
       success: true,
@@ -214,10 +193,118 @@ async function deleteDepartment(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete department controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting department'
+    return handleServiceError(res, error, 'An error occurred while deleting department');
+  }
+}
+
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/departments/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Departments');
+
+    sheet.columns = [
+      { header: 'Divisi Name', key: 'divisiName', width: 30 },
+      { header: 'Department Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.addRow({ divisiName: 'IT Digital', name: 'IT Digital Development', status: 'Active' });
+    sheet.addRow({ divisiName: 'Finance', name: 'Finance Operations', status: 'Active' });
+
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: Divisi Name harus sesuai dengan data Divisi yang ada. Kolom Status diisi Active atau Inactive. Department Code di-generate otomatis.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-department-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download Department template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk departments from Excel
+ * POST /api/v1/departments/upload
+ */
+async function uploadDepartments(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    const ExcelJSLib = require('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const sheet = workbook.worksheets[0];
+
+    const headerRow = sheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
+
+    const divNameIdx = headers.indexOf('Divisi Name');
+    const nameIdx = headers.indexOf('Department Name');
+
+    if (divNameIdx === -1 || nameIdx === -1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format file tidak valid. Kolom yang diperlukan: Divisi Name, Department Name, Status'
+      });
+    }
+
+    // Build new workbook with 'Division Name' column for bulkImportService
+    const newWorkbook = new ExcelJSLib.Workbook();
+    const newSheet = newWorkbook.addWorksheet('Departments');
+    newSheet.addRow(['Name', 'Division Name']);
+
+    let validRows = 0;
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const divName = String(row.getCell(divNameIdx + 1).value || '').trim();
+      const name = String(row.getCell(nameIdx + 1).value || '').trim();
+      if (!divName && !name) return;
+      newSheet.addRow([name, divName]);
+      validRows++;
+    });
+
+    if (validRows === 0) {
+      return res.status(400).json({ success: false, message: 'Tidak ada data valid untuk diimport' });
+    }
+
+    const buffer = await newWorkbook.xlsx.writeBuffer();
+    const { BulkImportService } = require('../services/bulkImportService');
+    const importSvc = new BulkImportService();
+    const result = await importSvc.importData(buffer, 'Department', { skipDuplicates: true, updateExisting: true });
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed,
+      errors: result.errors,
+    });
+  } catch (error) {
+    logger.error('Upload Department error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Department',
+      errors: error.errors || [],
     });
   }
 }
@@ -228,6 +315,8 @@ module.exports = {
   getDepartmentById,
   updateDepartment,
   deleteDepartment,
+  downloadTemplate,
+  uploadDepartments,
   createDepartmentValidation,
   updateDepartmentValidation
 };

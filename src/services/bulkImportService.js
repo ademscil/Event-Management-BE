@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const db = require('../database/connection');
 const logger = require('../config/logger');
 const { TemplateParser, ValidationError } = require('./templateParser');
@@ -185,38 +187,37 @@ class BulkImportService {
 
   /**
    * Import Business Unit
+   * Code is now auto-increment — lookup by Name to detect duplicates
    * @private
    */
   async _importBusinessUnit(data, request, options) {
-    // Check if exists
+    // Check if exists by Name
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Name = @name');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name
         await request
-          .input('name', sql.NVarChar(200), data.name)
           .query(`
             UPDATE BusinessUnits
-            SET Name = @name, UpdatedAt = GETDATE()
-            WHERE Code = @code
+            SET UpdatedAt = GETDATE()
+            WHERE Name = @name
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Business Unit with code '${data.code}' already exists`);
+        throw new Error(`Business Unit with name '${data.name}' already exists`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
       .query(`
-        INSERT INTO BusinessUnits (Code, Name, IsActive, CreatedAt)
-        VALUES (@code, @name, 1, GETDATE())
+        INSERT INTO BusinessUnits (Name, IsActive, CreatedAt)
+        VALUES (@name, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -224,51 +225,49 @@ class BulkImportService {
 
   /**
    * Import Division
+   * Code is now auto-increment — lookup by Name + BusinessUnit to detect duplicates
    * @private
    */
   async _importDivision(data, request, options) {
-    // Get Business Unit ID
+    // Get Business Unit ID by Name
     const buResult = await request
-      .input('buCode', sql.NVarChar(20), data.businessUnitCode)
-      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Code = @buCode');
+      .input('buName', sql.NVarChar(200), data.businessUnitName)
+      .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Name = @buName AND IsActive = 1');
 
     if (buResult.recordset.length === 0) {
-      throw new Error(`Business Unit with code '${data.businessUnitCode}' not found`);
+      throw new Error(`Business Unit with name '${data.businessUnitName}' not found`);
     }
 
     const businessUnitId = buResult.recordset[0].BusinessUnitId;
 
-    // Check if exists
+    // Check if exists by Name + BusinessUnitId
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT DivisionId FROM Divisions WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
+      .query('SELECT DivisionId FROM Divisions WHERE Name = @name AND BusinessUnitId = @businessUnitId');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name + BusinessUnitId
         await request
-          .input('name', sql.NVarChar(200), data.name)
-          .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
           .query(`
             UPDATE Divisions
-            SET Name = @name, BusinessUnitId = @businessUnitId, UpdatedAt = GETDATE()
-            WHERE Code = @code
+            SET UpdatedAt = GETDATE()
+            WHERE Name = @name AND BusinessUnitId = @businessUnitId
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Division with code '${data.code}' already exists`);
+        throw new Error(`Division with name '${data.name}' already exists in this Business Unit`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
-      .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
       .query(`
-        INSERT INTO Divisions (Code, Name, BusinessUnitId, IsActive, CreatedAt)
-        VALUES (@code, @name, @businessUnitId, 1, GETDATE())
+        INSERT INTO Divisions (Name, BusinessUnitId, IsActive, CreatedAt)
+        VALUES (@name, @businessUnitId, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -276,51 +275,49 @@ class BulkImportService {
 
   /**
    * Import Department
+   * Code is now auto-increment — lookup by Name + DivisionId to detect duplicates
    * @private
    */
   async _importDepartment(data, request, options) {
-    // Get Division ID
+    // Get Division ID by Name
     const divResult = await request
-      .input('divCode', sql.NVarChar(20), data.divisionCode)
-      .query('SELECT DivisionId FROM Divisions WHERE Code = @divCode');
+      .input('divName', sql.NVarChar(200), data.divisionName)
+      .query('SELECT DivisionId FROM Divisions WHERE Name = @divName AND IsActive = 1');
 
     if (divResult.recordset.length === 0) {
-      throw new Error(`Division with code '${data.divisionCode}' not found`);
+      throw new Error(`Division with name '${data.divisionName}' not found`);
     }
 
     const divisionId = divResult.recordset[0].DivisionId;
 
-    // Check if exists
+    // Check if exists by Name + DivisionId
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT DepartmentId FROM Departments WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .input('divisionId', sql.UniqueIdentifier, divisionId)
+      .query('SELECT DepartmentId FROM Departments WHERE Name = @name AND DivisionId = @divisionId');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name + DivisionId
         await request
-          .input('name', sql.NVarChar(200), data.name)
-          .input('divisionId', sql.UniqueIdentifier, divisionId)
           .query(`
             UPDATE Departments
-            SET Name = @name, DivisionId = @divisionId, UpdatedAt = GETDATE()
-            WHERE Code = @code
+            SET UpdatedAt = GETDATE()
+            WHERE Name = @name AND DivisionId = @divisionId
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Department with code '${data.code}' already exists`);
+        throw new Error(`Department with name '${data.name}' already exists in this Division`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
-      .input('divisionId', sql.UniqueIdentifier, divisionId)
       .query(`
-        INSERT INTO Departments (Code, Name, DivisionId, IsActive, CreatedAt)
-        VALUES (@code, @name, @divisionId, 1, GETDATE())
+        INSERT INTO Departments (Name, DivisionId, IsActive, CreatedAt)
+        VALUES (@name, @divisionId, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -328,55 +325,53 @@ class BulkImportService {
 
   /**
    * Import Function
+   * Code is now auto-increment — lookup by Name to detect duplicates
    * @private
    */
   async _importFunction(data, request, options) {
     let deptId = null;
-    if (data.departmentCode) {
+    if (data.departmentName) {
       const deptResult = await request
-        .input('deptCode', sql.NVarChar(20), data.departmentCode)
-        .query('SELECT DepartmentId FROM Departments WHERE Code = @deptCode');
+        .input('deptName', sql.NVarChar(200), data.departmentName)
+        .query('SELECT DepartmentId FROM Departments WHERE Name = @deptName AND IsActive = 1');
 
       if (deptResult.recordset.length === 0) {
-        throw new Error(`Department with code '${data.departmentCode}' not found`);
+        throw new Error(`Department with name '${data.departmentName}' not found`);
       }
 
       deptId = deptResult.recordset[0].DepartmentId;
     }
 
-    // Check if exists
+    // Check if exists by Name
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT FunctionId FROM Functions WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .query('SELECT FunctionId FROM Functions WHERE Name = @name');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name
         await request
-          .input('name', sql.NVarChar(200), data.name)
           .input('deptId', sql.UniqueIdentifier, deptId)
           .query(`
             UPDATE Functions
-            SET Name = @name,
-                DeptId = @deptId,
+            SET DeptId = @deptId,
                 UpdatedAt = GETDATE()
-            WHERE Code = @code
+            WHERE Name = @name
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Function with code '${data.code}' already exists`);
+        throw new Error(`Function with name '${data.name}' already exists`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
       .input('deptId', sql.UniqueIdentifier, deptId)
       .query(`
-        INSERT INTO Functions (Code, Name, DeptId, IsActive, CreatedAt)
-        VALUES (@code, @name, @deptId, 1, GETDATE())
+        INSERT INTO Functions (Name, DeptId, IsActive, CreatedAt)
+        VALUES (@name, @deptId, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -384,40 +379,39 @@ class BulkImportService {
 
   /**
    * Import Application
+   * Code is now auto-increment — lookup by Name to detect duplicates
    * @private
    */
   async _importApplication(data, request, options) {
-    // Check if exists
+    // Check if exists by Name
     const existing = await request
-      .input('code', sql.NVarChar(20), data.code)
-      .query('SELECT ApplicationId FROM Applications WHERE Code = @code');
+      .input('name', sql.NVarChar(200), data.name)
+      .query('SELECT ApplicationId FROM Applications WHERE Name = @name');
 
     if (existing.recordset.length > 0) {
       if (options.updateExisting) {
-        // Update existing
+        // Update existing by Name
         await request
-          .input('name', sql.NVarChar(200), data.name)
           .input('description', sql.NVarChar(500), data.description || null)
           .query(`
             UPDATE Applications
-            SET Name = @name, Description = @description, UpdatedAt = GETDATE()
-            WHERE Code = @code
+            SET Description = @description, UpdatedAt = GETDATE()
+            WHERE Name = @name
           `);
         return { action: 'updated' };
       } else if (options.skipDuplicates) {
         return { action: 'skipped' };
       } else {
-        throw new Error(`Application with code '${data.code}' already exists`);
+        throw new Error(`Application with name '${data.name}' already exists`);
       }
     }
 
-    // Insert new
+    // Insert new — Code is auto-increment, not passed
     await request
-      .input('name', sql.NVarChar(200), data.name)
       .input('description', sql.NVarChar(500), data.description || null)
       .query(`
-        INSERT INTO Applications (Code, Name, Description, IsActive, CreatedAt)
-        VALUES (@code, @name, @description, 1, GETDATE())
+        INSERT INTO Applications (Name, Description, IsActive, CreatedAt)
+        VALUES (@name, @description, 1, GETDATE())
       `);
 
     return { action: 'imported' };
@@ -428,9 +422,9 @@ class BulkImportService {
    * @private
    */
   async _importFunctionAppMapping(data, request, options) {
-    // Get Function ID
+    // Get Function ID by Code (INT)
     const funcResult = await request
-      .input('funcCode', sql.NVarChar(20), data.functionCode)
+      .input('funcCode', sql.Int, parseInt(data.functionCode, 10))
       .query('SELECT FunctionId FROM Functions WHERE Code = @funcCode');
 
     if (funcResult.recordset.length === 0) {
@@ -439,9 +433,9 @@ class BulkImportService {
 
     const functionId = funcResult.recordset[0].FunctionId;
 
-    // Get Application ID
+    // Get Application ID by Code (INT)
     const appResult = await request
-      .input('appCode', sql.NVarChar(20), data.applicationCode)
+      .input('appCode', sql.Int, parseInt(data.applicationCode, 10))
       .query('SELECT ApplicationId FROM Applications WHERE Code = @appCode');
 
     if (appResult.recordset.length === 0) {
@@ -461,7 +455,7 @@ class BulkImportService {
 
     if (ownershipCheck.recordset.length > 0) {
       const existingOwner = ownershipCheck.recordset[0];
-      if (existingOwner.FunctionCode !== data.functionCode) {
+      if (existingOwner.FunctionCode !== parseInt(data.functionCode, 10)) {
         throw new Error(`Application '${data.applicationCode}' is already mapped to Function '${existingOwner.FunctionCode}'`);
       }
     }
@@ -539,9 +533,9 @@ class BulkImportService {
    * @private
    */
   async _importAppDeptMapping(data, request, options) {
-    // Get Application ID
+    // Get Application ID by Code (INT)
     const appResult = await request
-      .input('appCode', sql.NVarChar(20), data.applicationCode)
+      .input('appCode', sql.Int, parseInt(data.applicationCode, 10))
       .query('SELECT ApplicationId FROM Applications WHERE Code = @appCode');
 
     if (appResult.recordset.length === 0) {
@@ -550,9 +544,9 @@ class BulkImportService {
 
     const applicationId = appResult.recordset[0].ApplicationId;
 
-    // Get Department ID
+    // Get Department ID by Code (INT)
     const deptResult = await request
-      .input('deptCode', sql.NVarChar(20), data.departmentCode)
+      .input('deptCode', sql.Int, parseInt(data.departmentCode, 10))
       .query('SELECT DepartmentId FROM Departments WHERE Code = @deptCode');
 
     if (deptResult.recordset.length === 0) {
@@ -605,31 +599,27 @@ class BulkImportService {
       Division: {
         entityType: 'Division',
         columnMapping: {
-          'Code': 'code',
           'Name': 'name',
-          'Business Unit Code': 'businessUnitCode'
+          'Business Unit Name': 'businessUnitName'
         }
       },
       Department: {
         entityType: 'Department',
         columnMapping: {
-          'Code': 'code',
           'Name': 'name',
-          'Division Code': 'divisionCode'
+          'Division Name': 'divisionName'
         }
       },
       Function: {
         entityType: 'Function',
         columnMapping: {
-          'Code': 'code',
           'Name': 'name',
-          'Department Code': 'departmentCode'
+          'Department Name': 'departmentName'
         }
       },
       Application: {
         entityType: 'Application',
         columnMapping: {
-          'Code': 'code',
           'Name': 'name',
           'Description': 'description'
         }
@@ -704,3 +694,4 @@ class BulkImportService {
 }
 
 module.exports = { BulkImportService, ValidationError };
+

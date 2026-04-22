@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const db = require('../database/connection');
 const logger = require('../config/logger');
 const BaseRepository = require('./baseRepository');
@@ -214,6 +216,8 @@ class MappingService {
           f.FunctionId,
           f.Code AS FunctionCode,
           f.Name AS FunctionName,
+          f.ITLeadUserId,
+          u.DisplayName AS ITLeadName,
           a.ApplicationId,
           a.Code AS ApplicationCode,
           a.Name AS ApplicationName,
@@ -222,6 +226,7 @@ class MappingService {
         FROM FunctionApplicationMappings fam
         INNER JOIN Functions f ON fam.FunctionId = f.FunctionId
         INNER JOIN Applications a ON fam.ApplicationId = a.ApplicationId
+        LEFT JOIN Users u ON f.ITLeadUserId = u.UserId
         WHERE f.IsActive = 1 AND a.IsActive = 1
         ORDER BY f.Name, a.Name
       `);
@@ -234,6 +239,8 @@ class MappingService {
             functionId: row.FunctionId,
             functionCode: row.FunctionCode,
             functionName: row.FunctionName,
+            itLeadUserId: row.ITLeadUserId || null,
+            itLeadName: row.ITLeadName || null,
             applications: []
           };
         }
@@ -643,37 +650,6 @@ class MappingService {
       throw error;
     }
   }
-  /**
-   * Get departments mapped to a specific application
-   * @param {string} applicationId - Application UUID
-   * @returns {Promise<Array>} Array of departments
-   */
-  async getDepartmentsByApplication(applicationId) {
-    try {
-      const pool = await db.getPool();
-      const request = pool.request();
-
-      request.input('applicationId', applicationId);
-
-      const result = await request.query(`
-        SELECT
-          dept.DepartmentId,
-          dept.Code AS DepartmentCode,
-          dept.Name AS DepartmentName,
-          adm.MappingId
-        FROM ApplicationDepartmentMappings adm
-        INNER JOIN Departments dept ON adm.DepartmentId = dept.DepartmentId
-        WHERE adm.ApplicationId = @applicationId AND dept.IsActive = 1
-        ORDER BY dept.Name
-      `);
-
-      return result.recordset;
-    } catch (error) {
-      logger.error('Error getting departments by application:', error);
-      throw error;
-    }
-  }
-
   // ==================== Export Functionality ====================
 
   /**
@@ -897,3 +873,4 @@ class MappingService {
 }
 
 module.exports = new MappingService();
+

@@ -145,6 +145,7 @@ async function login(req, res) {
       success: true,
       user: {
         userId: result.user.userId,
+        userKey: result.user.username,
         username: result.user.username,
         displayName: result.user.displayName,
         email: result.user.email,
@@ -220,6 +221,7 @@ async function validate(req, res) {
       valid: true,
       user: {
         userId: req.user.userId,
+        userKey: req.user.username,
         username: req.user.username,
         displayName: req.user.displayName,
         email: req.user.email,
@@ -273,6 +275,7 @@ async function refresh(req, res) {
       success: true,
       user: {
         userId: result.user.userId,
+        userKey: result.user.username,
         username: result.user.username,
         displayName: result.user.displayName,
         email: result.user.email,
@@ -301,6 +304,7 @@ async function getCurrentUser(req, res) {
     res.json({
       user: {
         userId: req.user.userId,
+        userKey: req.user.username,
         username: req.user.username,
         displayName: req.user.displayName,
         email: req.user.email,
@@ -327,8 +331,16 @@ async function forgotPassword(req, res) {
       });
     }
 
+    const requestedMethod = String(req.body.method || 'email').trim().toLowerCase();
+    if (requestedMethod === 'phone') {
+      return res.status(503).json({
+        error: 'Phone reset disabled',
+        message: 'Reset password via phone dinonaktifkan sementara.'
+      });
+    }
+
     const result = await authService.requestPasswordReset(
-      req.body.method || 'email',
+      'email',
       req.body.identifier,
       {
         ipAddress: req.ip || req.connection.remoteAddress,

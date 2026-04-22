@@ -1,3 +1,4 @@
+const sql = require('./database/sql-client');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -6,7 +7,8 @@ const logger = require('./config/logger');
 const { applySecurityMiddleware, configureAuthRateLimit } = require('./config/security');
 const swaggerUi = require('swagger-ui-express');
 const YAML = require('yamljs');
-const sql = require('mssql');
+
+  
 const db = require('./database/connection');
 const { requireAuth, requirePermission } = require('./middleware/authMiddleware');
 
@@ -29,7 +31,7 @@ app.use('/api/v1/auth/login', configureAuthRateLimit());
 const rateLimit = require('express-rate-limit');
 const passwordResetLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
-  max: 3, // 3 attempts per hour
+  max: 5, // 5 attempts per hour
   message: {
     error: 'Too many password reset attempts',
     message: 'Too many password reset attempts, please try again later.'
@@ -37,7 +39,8 @@ const passwordResetLimiter = rateLimit({
   handler: (req, res) => {
     logger.warn('Password reset rate limit exceeded', {
       ip: req.ip,
-      email: req.body?.email
+      identifier: req.body?.identifier || req.body?.phoneNumber || null,
+      method: req.body?.method || null
     });
     res.status(429).json({
       error: 'Too many password reset attempts',
@@ -129,7 +132,7 @@ app.get('/s/:shortCode', async (req, res) => {
       .input('prefix', sql.NVarChar(8), shortCode.toLowerCase())
       .query(`
         SELECT TOP 2 SurveyId
-        FROM Surveys
+        FROM Events
         WHERE LOWER(CONVERT(NVARCHAR(36), SurveyId)) LIKE @prefix + '%'
       `);
 
@@ -262,3 +265,4 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 module.exports = app;
+

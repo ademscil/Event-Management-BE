@@ -1,9 +1,34 @@
-const jwt = require('jsonwebtoken');
 const config = require('../config');
 const logger = require('../config/logger');
 const ldapService = require('./ldapService');
+const phoneOtpService = require('./phoneOtpService');
 const db = require('../database/connection');
 const { verifyPassword } = require('../utils/passwordHash');
+const {
+  generateOtpCode,
+  hashOneTimeToken,
+  normalizePhoneChannel,
+  normalizePhoneNumber
+} = require('./auth-service/utils');
+const {
+  createPasswordResetToken,
+  createPhoneOtpToken,
+  getLocalUserByRecovery,
+  invalidateOutstandingPhoneOtpTokens,
+  invalidateOutstandingResetTokens,
+  verifyStoredPhoneOtp
+} = require('./auth-service/password-reset');
+const {
+  createSession,
+  generateToken,
+  hashToken,
+  verifyJwt
+} = require('./auth-service/tokens');
+const {
+  logoutSession,
+  refreshAuthToken,
+  validateTokenSession
+} = require('./auth-service/sessions');
 
 /**
  * @typedef {Object} LoginResult
@@ -46,21 +71,46 @@ class AuthService {
     this.passwordResetExpirationMinutes = Number(process.env.PASSWORD_RESET_EXPIRATION_MINUTES || 30);
   }
 
-  normalizePhoneNumber(phoneNumber) {
-    const digits = String(phoneNumber || '').replace(/\D/g, '');
-    if (!digits) {
-      return '';
+  isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+  }
+
+  async resolveUserId(userIdentifier) {
+    const normalizedIdentifier = String(userIdentifier || '').trim();
+    if (!normalizedIdentifier) {
+      return null;
     }
 
-    if (digits.startsWith('62')) {
-      return digits;
+    if (this.isUuid(normalizedIdentifier)) {
+      return normalizedIdentifier;
     }
 
-    if (digits.startsWith('0')) {
-      return `62${digits.slice(1)}`;
-    }
+    const pool = await db.getPool();
+    const result = await pool.request()
+      .input('username', db.sql.VarChar, normalizedIdentifier)
+      .query(`
+        SELECT TOP 1 UserId
+        FROM Users
+        WHERE Username = @username AND IsActive = 1
+      `);
 
-    return digits;
+    return result.recordset[0]?.UserId || null;
+  }
+
+  generateOtpCode() {
+    return generateOtpCode();
+  }
+
+  hashOneTimeToken(value) {
+    return hashOneTimeToken(value);
+  }
+
+  normalizePhoneChannel(channel) {
+    return normalizePhoneChannel(channel);
+  }
+
+  normalizePhoneNumber(phone) {
+    return normalizePhoneNumber(phone);
   }
 
   /**
@@ -169,9 +219,14 @@ class AuthService {
    * @returns {Promise<Object>}
    */
   async getUserById(userId) {
+    const resolvedUserId = await this.resolveUserId(userId);
+    if (!resolvedUserId) {
+      return null;
+    }
+
     const pool = await db.getPool();
     const result = await pool.request()
-      .input('userId', db.sql.UniqueIdentifier, userId)
+      .input('userId', db.sql.UniqueIdentifier, resolvedUserId)
       .query(`
         SELECT 
           UserId, Username, DisplayName, Email, Role, 
@@ -208,54 +263,50 @@ class AuthService {
   }
 
   async getLocalUserByRecovery(method, identifier) {
-    const pool = await db.getPool();
-    const normalizedMethod = String(method || '').trim().toLowerCase();
-    const request = pool.request();
-
-    let whereClause = '';
-    if (normalizedMethod === 'phone') {
-      const normalizedPhone = this.normalizePhoneNumber(identifier);
-      if (!normalizedPhone) {
-        return null;
-      }
-      whereClause = 'PhoneNumber = @identifier';
-      request.input('identifier', db.sql.NVarChar, normalizedPhone);
-    } else {
-      const normalizedEmail = String(identifier || '').trim().toLowerCase();
-      if (!normalizedEmail) {
-        return null;
-      }
-      whereClause = 'LOWER(LTRIM(RTRIM(Email))) = @identifier';
-      request.input('identifier', db.sql.NVarChar, normalizedEmail);
-    }
-
-    const result = await request.query(`
-      SELECT TOP 1 UserId, Username, DisplayName, Email, PhoneNumber, UseLDAP, IsActive
-      FROM Users
-      WHERE ${whereClause}
-        AND IsActive = 1
-        AND UseLDAP = 0
-    `);
-
-    return result.recordset[0] || null;
-  }
-
-  hashOneTimeToken(token) {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(String(token || '')).digest('hex');
+    return getLocalUserByRecovery(db, this.normalizePhoneNumber.bind(this), method, identifier);
   }
 
   async invalidateOutstandingResetTokens(userId) {
-    const pool = await db.getPool();
-    await pool.request()
-      .input('userId', db.sql.UniqueIdentifier, userId)
-      .query(`
-        UPDATE PasswordResetTokens
-        SET UsedAt = GETDATE()
-        WHERE UserId = @userId
-          AND UsedAt IS NULL
-          AND ExpiresAt > GETDATE()
-      `);
+    return invalidateOutstandingResetTokens(db, userId);
+  }
+
+  async invalidateOutstandingPhoneOtpTokens(userId) {
+    return invalidateOutstandingPhoneOtpTokens(db, userId);
+  }
+
+  async createPasswordResetToken(user, requestedByMethod, requestedTo, requestMeta = {}) {
+    return createPasswordResetToken(
+      db,
+      this.hashOneTimeToken.bind(this),
+      user,
+      requestedByMethod,
+      requestedTo,
+      requestMeta,
+      this.passwordResetExpirationMinutes,
+    );
+  }
+
+  async createPhoneOtpToken(user, channel, code, requestMeta = {}) {
+    return createPhoneOtpToken(
+      db,
+      this.normalizePhoneChannel.bind(this),
+      this.hashOneTimeToken.bind(this),
+      user,
+      channel,
+      code,
+      requestMeta,
+    );
+  }
+
+  async verifyStoredPhoneOtp(user, channel, code) {
+    return verifyStoredPhoneOtp(
+      db,
+      this.normalizePhoneChannel.bind(this),
+      this.hashOneTimeToken.bind(this),
+      user,
+      channel,
+      code,
+    );
   }
 
   async requestPasswordReset(method, identifier, requestMeta = {}) {
@@ -273,34 +324,18 @@ class AuthService {
         };
       }
 
-      const crypto = require('crypto');
-      const rawToken = crypto.randomBytes(32).toString('hex');
-      const tokenHash = this.hashOneTimeToken(rawToken);
-      const expiresAt = new Date(Date.now() + this.passwordResetExpirationMinutes * 60 * 1000);
       const pool = await db.getPool();
       const frontendBaseUrl = process.env.FRONTEND_BASE_URL
         || process.env.PUBLIC_SURVEY_BASE_URL
         || (process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : process.env.BASE_URL)
         || 'http://localhost:3000';
+      const { rawToken, tokenHash } = await this.createPasswordResetToken(
+        user,
+        normalizedMethod,
+        normalizedMethod === 'phone' ? (user.PhoneNumber || '') : user.Email,
+        requestMeta
+      );
       const resetLink = `${String(frontendBaseUrl).replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(rawToken)}`;
-
-      await this.invalidateOutstandingResetTokens(user.UserId);
-
-      await pool.request()
-        .input('userId', db.sql.UniqueIdentifier, user.UserId)
-        .input('tokenHash', db.sql.NVarChar, tokenHash)
-        .input('requestedByMethod', db.sql.NVarChar, normalizedMethod)
-        .input('requestedTo', db.sql.NVarChar, normalizedMethod === 'phone' ? (user.PhoneNumber || '') : user.Email)
-        .input('expiresAt', db.sql.DateTime2, expiresAt)
-        .input('createdByIp', db.sql.NVarChar, requestMeta.ipAddress || null)
-        .query(`
-          INSERT INTO PasswordResetTokens (
-            UserId, TokenHash, RequestedByMethod, RequestedTo, ExpiresAt, CreatedByIp
-          )
-          VALUES (
-            @userId, @tokenHash, @requestedByMethod, @requestedTo, @expiresAt, @createdByIp
-          )
-        `);
 
       const emailService = require('./emailService');
       const sendResult = await emailService.sendEmail({
@@ -470,40 +505,17 @@ class AuthService {
    * @returns {Promise<string>} Session ID
    */
   async createSession(userId, token, refreshToken, ipAddress, userAgent) {
-    const pool = await db.getPool();
-    
-    // Calculate expiration times
-    const now = new Date();
-    const lastActivity = now;
-    const expiresAt = new Date(now.getTime() + this.sessionTimeoutMinutes * 60 * 1000);
-    const maxExpiresAt = new Date(now.getTime() + this.sessionMaxDurationHours * 60 * 60 * 1000);
-
-    // Invalidate previous sessions for this user (single session per user)
-    await pool.request()
-      .input('userId', db.sql.UniqueIdentifier, userId)
-      .query(`
-        UPDATE Sessions
-        SET IsActive = 0, InvalidatedAt = GETDATE()
-        WHERE UserId = @userId AND IsActive = 1
-      `);
-
-    // Create new session
-    const result = await pool.request()
-      .input('userId', db.sql.UniqueIdentifier, userId)
-      .input('tokenHash', db.sql.VarChar, this.hashToken(token))
-      .input('refreshTokenHash', db.sql.VarChar, this.hashToken(refreshToken))
-      .input('ipAddress', db.sql.VarChar, ipAddress || 'unknown')
-      .input('userAgent', db.sql.VarChar, userAgent || 'unknown')
-      .input('lastActivity', db.sql.DateTime, lastActivity)
-      .input('expiresAt', db.sql.DateTime, expiresAt)
-      .input('maxExpiresAt', db.sql.DateTime, maxExpiresAt)
-      .query(`
-        INSERT INTO Sessions (UserId, TokenHash, RefreshTokenHash, IpAddress, UserAgent, LastActivity, ExpiresAt, MaxExpiresAt, IsActive)
-        OUTPUT INSERTED.SessionId
-        VALUES (@userId, @tokenHash, @refreshTokenHash, @ipAddress, @userAgent, @lastActivity, @expiresAt, @maxExpiresAt, 1)
-      `);
-
-    return result.recordset[0].SessionId;
+    return createSession(
+      db,
+      this.hashToken.bind(this),
+      this.sessionTimeoutMinutes,
+      this.sessionMaxDurationHours,
+      userId,
+      token,
+      refreshToken,
+      ipAddress,
+      userAgent,
+    );
   }
 
   /**
@@ -513,8 +525,7 @@ class AuthService {
    * @returns {string}
    */
   hashToken(token) {
-    const crypto = require('crypto');
-    return crypto.createHash('sha256').update(token).digest('hex');
+    return hashToken(token);
   }
 
   /**
@@ -525,19 +536,7 @@ class AuthService {
    * @returns {string}
    */
   generateToken(user, type = 'access') {
-    const payload = {
-      sub: user.userId,
-      username: user.username,
-      role: user.role,
-      email: user.email,
-      type
-    };
-
-    const expiration = type === 'refresh' ? this.refreshExpiration : this.jwtExpiration;
-
-    return jwt.sign(payload, this.jwtSecret, {
-      expiresIn: expiration
-    });
+    return generateToken(this.jwtSecret, this.jwtExpiration, this.refreshExpiration, user, type);
   }
 
   /**
@@ -672,123 +671,15 @@ class AuthService {
    */
   async validateToken(token) {
     try {
-      // Verify JWT signature and expiration
-      const decoded = jwt.verify(token, this.jwtSecret);
-
-      // Check if token is access token
-      if (decoded.type !== 'access') {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Invalid token type'
-        };
-      }
-
-      // Check if session exists and is active
-      const pool = await db.getPool();
-      const tokenHash = this.hashToken(token);
-
-      const result = await pool.request()
-        .input('tokenHash', db.sql.VarChar, tokenHash)
-        .query(`
-          SELECT SessionId, UserId, LastActivity, ExpiresAt, MaxExpiresAt, IsActive
-          FROM Sessions
-          WHERE TokenHash = @tokenHash
-        `);
-
-      if (result.recordset.length === 0) {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Session not found'
-        };
-      }
-
-      const session = result.recordset[0];
-
-      if (!session.IsActive) {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Session has been invalidated'
-        };
-      }
-
-      // Check if session has expired
-      const now = new Date();
-      if (now > new Date(session.ExpiresAt) || now > new Date(session.MaxExpiresAt)) {
-        // Invalidate expired session
-        await pool.request()
-          .input('sessionId', db.sql.UniqueIdentifier, session.SessionId)
-          .query(`
-            UPDATE Sessions
-            SET IsActive = 0, InvalidatedAt = GETDATE()
-            WHERE SessionId = @sessionId
-          `);
-
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Session has expired'
-        };
-      }
-
-      // Get user info
-      const user = await this.getUserById(decoded.sub);
-
-      if (!user) {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'User not found'
-        };
-      }
-
-      // Update last activity (extend session)
-      const newExpiresAt = new Date(now.getTime() + this.sessionTimeoutMinutes * 60 * 1000);
-      
-      // Don't extend beyond max duration
-      const finalExpiresAt = newExpiresAt > new Date(session.MaxExpiresAt) 
-        ? new Date(session.MaxExpiresAt) 
-        : newExpiresAt;
-
-      await pool.request()
-        .input('sessionId', db.sql.UniqueIdentifier, session.SessionId)
-        .input('lastActivity', db.sql.DateTime, now)
-        .input('expiresAt', db.sql.DateTime, finalExpiresAt)
-        .query(`
-          UPDATE Sessions
-          SET LastActivity = @lastActivity, ExpiresAt = @expiresAt
-          WHERE SessionId = @sessionId
-        `);
-
-      return {
-        isValid: true,
-        user: {
-          userId: user.UserId,
-          username: user.Username,
-          displayName: user.DisplayName,
-          email: user.Email,
-          role: user.Role
-        },
-        errorMessage: null
-      };
-
+      return validateTokenSession({
+        db,
+        getUserById: this.getUserById.bind(this),
+        hashToken: this.hashToken.bind(this),
+        jwtSecret: this.jwtSecret,
+        sessionTimeoutMinutes: this.sessionTimeoutMinutes,
+        verifyJwt
+      }, token);
     } catch (error) {
-      if (error.name === 'TokenExpiredError') {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Token has expired'
-        };
-      } else if (error.name === 'JsonWebTokenError') {
-        return {
-          isValid: false,
-          user: null,
-          errorMessage: 'Invalid token'
-        };
-      }
-
       logger.error('Token validation error:', error);
       return {
         isValid: false,
@@ -805,17 +696,7 @@ class AuthService {
    */
   async logout(token) {
     try {
-      const tokenHash = this.hashToken(token);
-      const pool = await db.getPool();
-
-      await pool.request()
-        .input('tokenHash', db.sql.VarChar, tokenHash)
-        .query(`
-          UPDATE Sessions
-          SET IsActive = 0, InvalidatedAt = GETDATE()
-          WHERE TokenHash = @tokenHash
-        `);
-
+      await logoutSession(db, this.hashToken.bind(this), token);
       logger.info('User logged out successfully');
       return true;
 
@@ -834,102 +715,19 @@ class AuthService {
    */
   async refreshToken(refreshToken, ipAddress, userAgent) {
     try {
-      // Verify refresh token
-      const decoded = jwt.verify(refreshToken, this.jwtSecret);
-
-      // Check if token is refresh token
-      if (decoded.type !== 'refresh') {
-        return {
-          success: false,
-          token: null,
-          refreshToken: null,
-          user: null,
-          errorMessage: 'Invalid token type'
-        };
+      const result = await refreshAuthToken({
+        createSession: this.createSession.bind(this),
+        db,
+        generateToken: this.generateToken.bind(this),
+        getUserById: this.getUserById.bind(this),
+        hashToken: this.hashToken.bind(this),
+        jwtSecret: this.jwtSecret,
+        verifyJwt
+      }, refreshToken, ipAddress, userAgent);
+      if (result.success) {
+        logger.info(`Token refreshed for user: ${result.user.username}`);
       }
-
-      // Require refresh token to be bound to an active server-side session
-      const pool = await db.getPool();
-      const refreshTokenHash = this.hashToken(refreshToken);
-      const sessionResult = await pool.request()
-        .input('refreshTokenHash', db.sql.VarChar, refreshTokenHash)
-        .query(`
-          SELECT SessionId, UserId, IsActive, ExpiresAt, MaxExpiresAt
-          FROM Sessions
-          WHERE RefreshTokenHash = @refreshTokenHash
-        `);
-
-      if (sessionResult.recordset.length === 0) {
-        return {
-          success: false,
-          token: null,
-          refreshToken: null,
-          user: null,
-          errorMessage: 'Invalid refresh token'
-        };
-      }
-
-      const session = sessionResult.recordset[0];
-      const now = new Date();
-      if (!session.IsActive || now > new Date(session.ExpiresAt) || now > new Date(session.MaxExpiresAt)) {
-        return {
-          success: false,
-          token: null,
-          refreshToken: null,
-          user: null,
-          errorMessage: 'Refresh session has expired'
-        };
-      }
-
-      if (String(session.UserId) !== String(decoded.sub)) {
-        return {
-          success: false,
-          token: null,
-          refreshToken: null,
-          user: null,
-          errorMessage: 'Refresh token does not match session'
-        };
-      }
-
-      // Get user
-      const user = await this.getUserById(decoded.sub);
-
-      if (!user) {
-        return {
-          success: false,
-          token: null,
-          refreshToken: null,
-          user: null,
-          errorMessage: 'User not found'
-        };
-      }
-
-      // Create user info object
-      const userInfo = {
-        userId: user.UserId,
-        username: user.Username,
-        displayName: user.DisplayName,
-        email: user.Email,
-        role: user.Role
-      };
-
-      // Generate new tokens
-      const newAccessToken = this.generateToken(userInfo, 'access');
-      const newRefreshToken = this.generateToken(userInfo, 'refresh');
-
-      // Create new session
-      await this.createSession(user.UserId, newAccessToken, newRefreshToken, ipAddress, userAgent);
-
-      logger.info(`Token refreshed for user: ${user.Username}`);
-
-      return {
-        success: true,
-        token: newAccessToken,
-        refreshToken: newRefreshToken,
-        user: userInfo,
-        errorMessage: null
-      };
-
+      return result;
     } catch (error) {
       logger.error('Token refresh error:', error);
       return {
@@ -938,6 +736,119 @@ class AuthService {
         refreshToken: null,
         user: null,
         errorMessage: 'Token refresh failed'
+      };
+    }
+  }
+
+  async requestPhoneResetOtp(identifier, channel, requestMeta = {}) {
+    const normalizedChannel = this.normalizePhoneChannel(channel);
+    const genericMessage = `Jika nomor telepon terdaftar untuk user local, OTP reset password akan dikirim melalui ${normalizedChannel === 'sms' ? 'SMS' : 'WhatsApp'}.`;
+
+    try {
+      const user = await this.getLocalUserByRecovery('phone', identifier);
+      if (!user || !user.PhoneNumber) {
+        return {
+          success: true,
+          message: genericMessage,
+        };
+      }
+
+      const otpCode = this.generateOtpCode();
+      let otpTokenHash = null;
+
+      if (!phoneOtpService.supportsProviderVerification()) {
+        const otpToken = await this.createPhoneOtpToken(user, normalizedChannel, otpCode, requestMeta);
+        otpTokenHash = otpToken.tokenHash;
+      }
+
+      const deliveryResult = await phoneOtpService.sendPasswordResetOtp(user.PhoneNumber, normalizedChannel, otpCode);
+      if (!deliveryResult.success) {
+        if (otpTokenHash) {
+          const pool = await db.getPool();
+          await pool.request()
+            .input('tokenHash', db.sql.NVarChar, otpTokenHash)
+            .query(`
+              UPDATE PasswordResetTokens
+              SET UsedAt = GETDATE()
+              WHERE TokenHash = @tokenHash
+                AND UsedAt IS NULL
+            `);
+        }
+
+        return {
+          success: false,
+          message: deliveryResult.error || 'Gagal mengirim OTP reset password.',
+        };
+      }
+
+      logger.info('Password reset OTP requested', {
+        userId: user.UserId,
+        channel: normalizedChannel,
+        requestedTo: user.PhoneNumber,
+        ipAddress: requestMeta.ipAddress || null,
+      });
+
+      return {
+        success: true,
+        message: genericMessage,
+      };
+    } catch (error) {
+      logger.error('Phone OTP request failed:', error);
+      return {
+        success: false,
+        message: 'Gagal memproses permintaan OTP reset password.',
+      };
+    }
+  }
+
+  async verifyPhoneResetOtp(identifier, otp, channel, requestMeta = {}) {
+    const normalizedChannel = this.normalizePhoneChannel(channel);
+
+    try {
+      const user = await this.getLocalUserByRecovery('phone', identifier);
+      if (!user || !user.PhoneNumber) {
+        return {
+          success: false,
+          errorMessage: 'OTP tidak valid atau nomor telepon tidak ditemukan.',
+        };
+      }
+
+      const verificationResult = phoneOtpService.supportsProviderVerification()
+        ? await phoneOtpService.verifyPasswordResetOtp(user.PhoneNumber, normalizedChannel, otp)
+        : { success: await this.verifyStoredPhoneOtp(user, normalizedChannel, otp) };
+
+      const isOtpValid = verificationResult.success;
+
+      if (!isOtpValid) {
+        return {
+          success: false,
+          errorMessage: verificationResult.error || 'OTP tidak valid atau sudah kedaluwarsa.',
+        };
+      }
+
+      const { rawToken } = await this.createPasswordResetToken(
+        user,
+        'phone',
+        user.PhoneNumber,
+        requestMeta
+      );
+
+      logger.info('Password reset OTP verified', {
+        userId: user.UserId,
+        channel: normalizedChannel,
+        requestedTo: user.PhoneNumber,
+      });
+
+      return {
+        success: true,
+        resetToken: rawToken,
+        message: 'OTP valid. Silakan buat password baru.',
+      };
+    } catch (error) {
+      logger.error('Phone OTP verification failed:', error);
+      return {
+        success: false,
+        errorMessage: 'Gagal memverifikasi OTP reset password.',
       };
     }
   }

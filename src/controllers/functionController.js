@@ -1,16 +1,28 @@
 const { body, param, validationResult } = require('express-validator');
 const functionService = require('../services/functionService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
+
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
 
 /**
  * Validation rules for creating a function
  */
 const createFunctionValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -25,11 +37,6 @@ const createFunctionValidation = [
  */
 const updateFunctionValidation = [
   param('id').isUUID().withMessage('Function ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -58,8 +65,8 @@ async function createFunction(req, res) {
       });
     }
 
-    const { code, name, deptId } = req.body;
-    const result = await functionService.createFunction({ code, name, deptId });
+    const { name, deptId } = req.body;
+    const result = await functionService.createFunction({ name, deptId });
 
     res.status(201).json({
       success: true,
@@ -68,11 +75,7 @@ async function createFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Create function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating function'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating function');
   }
 }
 
@@ -161,11 +164,7 @@ async function updateFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Update function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating function'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating function');
   }
 }
 
@@ -186,10 +185,115 @@ async function deleteFunction(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete function controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting function'
+    return handleServiceError(res, error, 'An error occurred while deleting function');
+  }
+}
+
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/functions/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Functions');
+
+    sheet.columns = [
+      { header: 'Function Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    sheet.addRow({ name: 'Infrastructure', status: 'Active' });
+    sheet.addRow({ name: 'Development', status: 'Active' });
+
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. Function Code di-generate otomatis.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-function-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download Function template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk functions from Excel
+ * POST /api/v1/functions/upload
+ */
+async function uploadFunctions(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    const ExcelJSLib = require('exceljs');
+    const workbook = new ExcelJSLib.Workbook();
+    await workbook.xlsx.load(req.file.buffer);
+    const sheet = workbook.worksheets[0];
+
+    const headerRow = sheet.getRow(1);
+    const headers = [];
+    headerRow.eachCell((cell) => headers.push(String(cell.value || '').trim()));
+
+    const nameIdx = headers.indexOf('Function Name');
+
+    if (nameIdx === -1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Format file tidak valid. Kolom yang diperlukan: Function Name, Status'
+      });
+    }
+
+    // Build new workbook with expected column names for bulkImportService
+    const newWorkbook = new ExcelJSLib.Workbook();
+    const newSheet = newWorkbook.addWorksheet('Functions');
+    newSheet.addRow(['Name']);
+
+    let validRows = 0;
+
+    sheet.eachRow((row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const name = String(row.getCell(nameIdx + 1).value || '').trim();
+      if (!name) return;
+      newSheet.addRow([name]);
+      validRows++;
+    });
+
+    if (validRows === 0) {
+      return res.status(400).json({ success: false, message: 'Tidak ada data valid untuk diimport' });
+    }
+
+    const buffer = await newWorkbook.xlsx.writeBuffer();
+    const { BulkImportService } = require('../services/bulkImportService');
+    const importSvc = new BulkImportService();
+    const result = await importSvc.importData(buffer, 'Function', { skipDuplicates: true, updateExisting: true });
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed,
+      errors: result.errors,
+    });
+  } catch (error) {
+    logger.error('Upload Function error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Function',
+      errors: error.errors || [],
     });
   }
 }
@@ -200,6 +304,8 @@ module.exports = {
   getFunctionById,
   updateFunction,
   deleteFunction,
+  downloadTemplate,
+  uploadFunctions,
   createFunctionValidation,
   updateFunctionValidation
 };

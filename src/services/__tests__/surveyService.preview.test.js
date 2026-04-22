@@ -30,7 +30,7 @@ describe('SurveyService - Preview and Configuration', () => {
   });
 
   describe('updateSurveyConfig', () => {
-    const surveyId = 'survey-123';
+    const surveyId = '123e4567-e89b-12d3-a456-426614174000';
     const mockConfig = {
       heroTitle: 'Welcome to Survey',
       heroSubtitle: 'Please share your feedback',
@@ -46,8 +46,8 @@ describe('SurveyService - Preview and Configuration', () => {
       // Mock survey exists check
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ SurveyId: surveyId }] }) // Survey exists
-        .mockResolvedValueOnce({ recordset: [{ ConfigId: 'config-123' }] }) // Config exists
-        .mockResolvedValueOnce({ recordset: [{ ...mockConfig, ConfigId: 'config-123' }] }); // Update result
+        .mockResolvedValueOnce({ recordset: [{ ConfigId: '123e4567-e89b-12d3-a456-426614174010' }] }) // Config exists
+        .mockResolvedValueOnce({ recordset: [{ ...mockConfig, ConfigId: '123e4567-e89b-12d3-a456-426614174010' }] }); // Update result
 
       const result = await surveyService.updateSurveyConfig(surveyId, mockConfig);
 
@@ -76,7 +76,7 @@ describe('SurveyService - Preview and Configuration', () => {
     it('should throw ValidationError if no fields to update', async () => {
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ SurveyId: surveyId }] }) // Survey exists
-        .mockResolvedValueOnce({ recordset: [{ ConfigId: 'config-123' }] }); // Config exists
+        .mockResolvedValueOnce({ recordset: [{ ConfigId: '123e4567-e89b-12d3-a456-426614174010' }] }); // Config exists
 
       await expect(surveyService.updateSurveyConfig(surveyId, {}))
         .rejects.toThrow('No fields to update');
@@ -90,8 +90,8 @@ describe('SurveyService - Preview and Configuration', () => {
 
       mockRequest.query
         .mockResolvedValueOnce({ recordset: [{ SurveyId: surveyId }] })
-        .mockResolvedValueOnce({ recordset: [{ ConfigId: 'config-123' }] })
-        .mockResolvedValueOnce({ recordset: [{ ...partialConfig, ConfigId: 'config-123' }] });
+        .mockResolvedValueOnce({ recordset: [{ ConfigId: '123e4567-e89b-12d3-a456-426614174010' }] })
+        .mockResolvedValueOnce({ recordset: [{ ...partialConfig, ConfigId: '123e4567-e89b-12d3-a456-426614174010' }] });
 
       await surveyService.updateSurveyConfig(surveyId, partialConfig);
 
@@ -102,7 +102,7 @@ describe('SurveyService - Preview and Configuration', () => {
   });
 
   describe('generatePreview', () => {
-    const surveyId = 'survey-123';
+    const surveyId = '123e4567-e89b-12d3-a456-426614174000';
     const mockSurveyData = {
       SurveyId: surveyId,
       Title: 'Test Survey',
@@ -129,7 +129,7 @@ describe('SurveyService - Preview and Configuration', () => {
 
     const mockQuestions = [
       {
-        QuestionId: 'q1',
+        QuestionId: '123e4567-e89b-12d3-a456-426614174101',
         Type: 'Text',
         PromptText: 'What is your name?',
         Subtitle: 'Please enter your full name',
@@ -142,7 +142,7 @@ describe('SurveyService - Preview and Configuration', () => {
         Options: null
       },
       {
-        QuestionId: 'q2',
+        QuestionId: '123e4567-e89b-12d3-a456-426614174102',
         Type: 'Rating',
         PromptText: 'How satisfied are you?',
         Subtitle: null,

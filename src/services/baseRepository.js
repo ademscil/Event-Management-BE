@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const db = require('../database/connection');
 const logger = require('../config/logger');
 
@@ -308,3 +310,4 @@ class BaseRepository {
 }
 
 module.exports = BaseRepository;
+

@@ -1,29 +1,44 @@
-name: CD
+name: CD — Backend
 
 on:
-  release:
-    types: [published]
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
   workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        default: staging
+        type: choice
+        options:
+          - staging
+          - production
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
-  group: be-cd-production
+  group: be-cd-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-and-package:
+    name: Build & Package
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment:
-      name: production
+      name: ${{ github.event.inputs.environment || 'staging' }}
+
+    env:
+      NODE_ENV: production
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -31,21 +46,22 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install production dependencies
+        run: npm ci --omit=dev
 
-      - name: Build (if available)
-        run: npm run build --if-present
-
-      - name: Prepare artifact
+      - name: Prepare release artifact
         run: |
           mkdir -p release
           cp -r src public package.json server.js release/
-          if [ -f package-lock.json ]; then cp package-lock.json release/; fi
-          if [ -f README.md ]; then cp README.md release/; fi
+          cp package-lock.json release/ 2>/dev/null || true
+          cp README.md release/ 2>/dev/null || true
+          echo "BUILD_SHA=${{ github.sha }}" > release/BUILD_INFO
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> release/BUILD_INFO
+          echo "BUILD_REF=${{ github.ref_name }}" >> release/BUILD_INFO
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: event-management-release
+          name: csi-portal-be-${{ github.sha }}
           path: release/
+          retention-days: 30

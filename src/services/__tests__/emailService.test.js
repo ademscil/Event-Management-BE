@@ -27,16 +27,15 @@ describe('EmailService', () => {
             const html = await emailService.renderTemplate('survey-invitation', {
                 recipientName: 'John Doe',
                 surveyTitle: 'IT Satisfaction Survey',
-                surveyDescription: 'Please provide your feedback',
                 surveyLink: 'http://localhost:3000/survey/index.html?id=123',
                 startDate: '2024-01-01',
                 endDate: '2024-01-31',
                 targetRespondents: '100',
+                customMessage: 'Please provide your feedback',
                 embedCover: false,
                 heroCoverUrl: null
             });
 
-            expect(html).toContain('Bapak/Ibu yang kami hormati');
             expect(html).toContain('IT Satisfaction Survey');
             expect(html).toContain('Please provide your feedback');
             expect(html).toContain('http://localhost:3000/survey/index.html?id=123');

@@ -1,157 +1,173 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" xmlns="http://www.w3.org/1999/xhtml">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= surveyTitle %></title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        .container {
-            background-color: #ffffff;
-            border-radius: 8px;
-            padding: 30px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .header h1 {
-            color: #2c3e50;
-            margin: 0 0 10px 0;
-        }
-        .content {
-            margin-bottom: 30px;
-        }
-        .survey-info {
-            background-color: #f8f9fa;
-            border-left: 4px solid #007bff;
-            padding: 15px;
-            margin: 20px 0;
-        }
-        .survey-info p {
-            margin: 5px 0;
-        }
-        .custom-message {
-            background-color: #f8fafc;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 12px;
-            margin: 16px 0;
-            white-space: pre-line;
-        }
-        .cta-button {
-            display: inline-block;
-            padding: 12px 30px;
-            background-color: #007bff;
-            color: #ffffff;
-            text-decoration: none;
-            border-radius: 5px;
-            font-weight: bold;
-            text-align: center;
-        }
-        .cta-button:hover {
-            background-color: #0056b3;
-        }
-        .footer {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #e0e0e0;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-        }
-        <% if (embedCover && heroCoverUrl) { %>
-        .hero-cover {
-            width: 100%;
-            max-width: 600px;
-            height: auto;
-            margin-bottom: 20px;
-            border-radius: 8px;
-        }
-        <% } %>
-        <% if (typeof includeQrCode !== 'undefined' && includeQrCode && typeof qrCodeDataUrl !== 'undefined' && qrCodeDataUrl) { %>
-        .qr-wrap {
-            margin: 16px 0 20px 0;
-            padding: 14px;
-            border: 1px solid #e5e7eb;
-            border-radius: 10px;
-            text-align: center;
-            background: #f8fafc;
-        }
-        .qr-image {
-            width: 180px;
-            height: 180px;
-            display: inline-block;
-            border-radius: 8px;
-            border: 1px solid #d1d5db;
-            background: #fff;
-        }
-        .qr-caption {
-            margin-top: 8px;
-            color: #4b5563;
-            font-size: 12px;
-        }
-        <% } %>
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title><%= surveyTitle %></title>
+  <style>
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0 !important; padding: 0 !important; background-color: #f0f2f5; }
+    @media only screen and (max-width: 600px) {
+      .email-container { width: 100% !important; }
+      .email-body { padding: 24px 16px !important; }
+      .email-header { padding: 18px 16px !important; }
+      .email-footer { padding: 16px !important; }
+      h1 { font-size: 20px !important; }
+      .cta-btn { padding: 14px 28px !important; font-size: 14px !important; }
+      .logo-text { font-size: 11px !important; }
+    }
+  </style>
 </head>
-<body>
-    <div class="container">
-        <% if (embedCover && heroCoverUrl) { %>
-        <img src="<%= heroCoverUrl %>" alt="Survey Cover" class="hero-cover">
-        <% } %>
-        
-        <div class="header">
-            <h1><%= surveyTitle %></h1>
-        </div>
-        
-        <div class="content">
-            <p>Bapak/Ibu yang kami hormati,</p>
-            <p>Kami mengundang Anda untuk berpartisipasi pada survey berikut:</p>
+<body style="margin:0; padding:0; background-color:#f0f2f5;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#f0f2f5; padding:32px 0 48px;">
+    <tr>
+      <td align="center">
+        <table width="600" cellpadding="0" cellspacing="0" border="0" class="email-container" style="max-width:600px; width:100%;">
+          <tr>
+            <td>
 
-            <% if (typeof customMessage !== 'undefined' && customMessage && customMessage.trim()) { %>
-            <div class="custom-message"><%= customMessage %></div>
-            <% } %>
+              <!-- ── Header ── -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#c0392b" style="background-color:#c0392b; border-radius:12px 12px 0 0;">
+                <tr>
+                  <td class="email-header" style="padding:20px 28px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:#fff; font-size:20px; font-weight:800; letter-spacing:-0.02em;">
+                          CSI Portal
+                        </td>
+                        <td align="right" valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:rgba(255,255,255,0.85); font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">
+                          PT ASTRA OTOPARTS TBK
+                        </td>
+                      </tr>
+                    </table>
+                    <div style="height:1px; background:rgba(255,255,255,0.2); margin:12px 0 0;"></div>
+                  </td>
+                </tr>
+              </table>
 
-            <div class="survey-info">
-                <p><strong>Periode Survey:</strong> <%= startDate %> - <%= endDate %></p>
-            </div>
+              <!-- ── Card ── -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff; border-radius:0 0 12px 12px; box-shadow:0 8px 32px rgba(15,23,42,0.12);">
+                <tr>
+                  <td>
 
-            <% if (surveyDescription) { %>
-            <p><%= surveyDescription %></p>
-            <% } %>
-            
-            <p>Partisipasi Anda sangat penting untuk membantu kami meningkatkan kualitas layanan IT. Survey ini hanya membutuhkan waktu beberapa menit untuk diselesaikan.</p>
-            
-            <p style="text-align: center; margin: 30px 0;">
-                <a href="<%= surveyLink %>" class="cta-button">Mulai Survey</a>
-            </p>
+                    <!-- Hero cover (opsional) -->
+                    <% if (embedCover && heroCoverUrl) { %>
+                    <img src="<%= heroCoverUrl %>" alt="Survey Cover" style="width:100%; height:auto; display:block;" />
+                    <% } %>
 
-            <% if (typeof includeQrCode !== 'undefined' && includeQrCode && ((typeof qrCodeImageSrc !== 'undefined' && qrCodeImageSrc) || (typeof qrCodeDataUrl !== 'undefined' && qrCodeDataUrl))) { %>
-            <div class="qr-wrap">
-                <img src="<%= qrCodeImageSrc || qrCodeDataUrl %>" alt="QR Code Survey" class="qr-image" />
-                <div class="qr-caption">Scan QR code ini untuk membuka survey.</div>
-            </div>
-            <% } %>
-            
-            <p style="font-size: 14px; color: #666;">
-                Atau salin dan tempel link berikut di browser Anda:<br>
-                <a href="<%= surveyLink %>"><%= surveyLink %></a>
-            </p>
-        </div>
-        
-        <div class="footer">
-            <p>Email ini dikirim secara otomatis oleh CSI Portal - PT Astra Otoparts Tbk</p>
-            <p>Mohon tidak membalas email ini.</p>
-        </div>
-    </div>
+                    <!-- Card body -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="padding:32px 28px 28px;" class="email-body">
+
+                          <!-- Logo + badge row -->
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
+                            <tr>
+                              <td valign="middle">
+                                <% if (typeof logoCid !== 'undefined' && logoCid) { %>
+                                <img src="<%= logoCid %>" alt="PT Astra Otoparts Tbk" width="36" height="36" style="width:36px; height:36px; display:inline-block; border-radius:6px; vertical-align:middle;" />
+                                <% } %>
+                              </td>
+                              <td align="center" valign="middle">
+                                <span style="display:inline-block; background:#fef2f2; border:1px solid #fecaca; color:#c0392b; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Segoe UI',Arial,sans-serif;">UNDANGAN SURVEY</span>
+                              </td>
+                              <td width="36"></td>
+                            </tr>
+                          </table>
+
+                          <!-- Survey title -->
+                          <h1 style="font-size:24px; font-weight:800; color:#0f172a; text-align:center; margin:0 0 28px; line-height:1.2; letter-spacing:-0.02em; font-family:'Segoe UI',Arial,sans-serif;"><%= surveyTitle %></h1>
+
+                          <!-- Pesan dari form (CMS) atau default -->
+                          <% if (typeof customMessage !== 'undefined' && customMessage && customMessage.trim()) { %>
+                          <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:18px 20px; margin:0 0 24px;">
+                            <p style="font-size:14px; color:#334155; line-height:1.75; margin:0; white-space:pre-line; font-family:'Segoe UI',Arial,sans-serif;"><%= customMessage %></p>
+                          </div>
+                          <% } else { %>
+                          <p style="font-size:14px; color:#475569; line-height:1.75; margin:0 0 14px; font-family:'Segoe UI',Arial,sans-serif;">Bapak/Ibu yang kami hormati,</p>
+                          <p style="font-size:14px; color:#475569; line-height:1.75; margin:0 0 20px; font-family:'Segoe UI',Arial,sans-serif;">Kami mengundang Anda untuk berpartisipasi pada <strong>Survey Kepuasan Pengguna Layanan IT &amp; BPM</strong> PT Astra Otoparts Tbk. Masukan Anda sangat berarti untuk membantu kami meningkatkan kualitas layanan.</p>
+                          <% } %>
+
+                          <!-- Info box — hanya periode -->
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8fafc; border:1px solid #e2e8f0; border-left:4px solid #c0392b; border-radius:8px; margin:0 0 28px;">
+                            <tr>
+                              <td style="padding:14px 18px;">
+                                <p style="font-size:13px; color:#334155; margin:0; font-family:'Segoe UI',Arial,sans-serif;"><strong style="color:#0f172a;">Periode Survey:</strong> <%= startDate %> &ndash; <%= endDate %></p>
+                              </td>
+                            </tr>
+                          </table>
+
+                          <!-- CTA button -->
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td align="center" style="padding:0 0 24px;">
+                                <!--[if mso]>
+                                <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word"
+                                  href="<%= surveyLink %>" style="height:50px;v-text-anchor:middle;width:220px;" arcsize="16%"
+                                  strokecolor="#c0392b" fillcolor="#c0392b">
+                                  <w:anchorlock/>
+                                  <center style="color:#ffffff;font-family:sans-serif;font-size:15px;font-weight:bold;">Mulai Survey →</center>
+                                </v:roundrect>
+                                <![endif]-->
+                                <!--[if !mso]><!-->
+                                <a href="<%= surveyLink %>" class="cta-btn" style="display:inline-block; background:#c0392b; color:#ffffff !important; text-decoration:none !important; font-size:15px; font-weight:700; padding:15px 44px; border-radius:8px; font-family:'Segoe UI',Arial,sans-serif;">Mulai Survey &rarr;</a>
+                                <!--<![endif]-->
+                              </td>
+                            </tr>
+                          </table>
+
+                          <!-- QR Code (opsional) -->
+                          <% if (typeof includeQrCode !== 'undefined' && includeQrCode && ((typeof qrCodeImageSrc !== 'undefined' && qrCodeImageSrc) || (typeof qrCodeDataUrl !== 'undefined' && qrCodeDataUrl))) { %>
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; margin:0 0 20px;">
+                            <tr>
+                              <td align="center" style="padding:20px;">
+                                <img src="<%= qrCodeImageSrc || qrCodeDataUrl %>" alt="QR Code Survey" style="width:160px; height:160px; border-radius:8px; border:1px solid #d1d5db; display:block; margin:0 auto 10px;" />
+                                <p style="margin:0; color:#64748b; font-size:12px; font-family:'Segoe UI',Arial,sans-serif;">Scan QR code ini untuk membuka survey dari perangkat mobile Anda.</p>
+                              </td>
+                            </tr>
+                          </table>
+                          <% } %>
+
+                          <!-- Link fallback -->
+                          <p style="font-size:12px; color:#94a3b8; text-align:center; margin:0 0 24px; word-break:break-all; font-family:'Segoe UI',Arial,sans-serif;">
+                            Jika tombol tidak berfungsi, salin link berikut ke browser Anda:<br />
+                            <a href="<%= surveyLink %>" style="color:#c0392b; text-decoration:underline;"><%= surveyLink %></a>
+                          </p>
+
+                          <div style="height:1px; background:#f1f5f9; margin:0 0 20px;"></div>
+
+                          <p style="font-size:12px; color:#94a3b8; text-align:center; margin:0; font-family:'Segoe UI',Arial,sans-serif;">
+                            Survey ini hanya membutuhkan beberapa menit. Terima kasih atas partisipasi Anda.
+                          </p>
+
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Footer -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f8fafc; border-top:1px solid #f1f5f9;">
+                      <tr>
+                        <td align="center" class="email-footer" style="padding:20px 32px 28px;">
+                          <p style="font-size:11px; color:#94a3b8; line-height:1.7; margin:0; font-family:'Segoe UI',Arial,sans-serif;">
+                            Email ini dikirim secara otomatis oleh <strong style="color:#64748b;">CSI Portal</strong> &mdash; PT Astra Otoparts Tbk.<br />
+                            Mohon tidak membalas email ini langsung.
+                          </p>
+                        </td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>

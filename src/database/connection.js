@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('./sql-client');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
 
@@ -135,3 +137,4 @@ class DatabaseConnection {
 // Export singleton instance and sql types
 module.exports = new DatabaseConnection();
 module.exports.sql = sql;
+

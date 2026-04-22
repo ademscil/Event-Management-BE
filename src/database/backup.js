@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('./sql-client');
+
+  
 const path = require('path');
 const fs = require('fs').promises;
 const config = require('../config');
@@ -253,3 +255,4 @@ if (require.main === module) {
 }
 
 module.exports = DatabaseBackup;
+

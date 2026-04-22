@@ -1,6 +1,8 @@
+const sql = require('./sql-client');
 const fs = require('fs').promises;
 const path = require('path');
-const sql = require('mssql');
+
+  
 const config = require('../config');
 
 const migrationsDir = path.join(__dirname, 'migrations');
@@ -105,3 +107,4 @@ async function main() {
 }
 
 main();
+

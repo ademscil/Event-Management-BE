@@ -1,3 +1,4 @@
+const sql = require('../database/sql-client');
 /**
  * Email Service
  * Handles email sending, template rendering, and email logging
@@ -8,7 +9,8 @@ const ejs = require('ejs');
 const QRCode = require('qrcode');
 const path = require('path');
 const fs = require('fs').promises;
-const sql = require('mssql');
+
+  
 const logger = require('../config/logger');
 const db = require('../database/connection');
 
@@ -322,6 +324,78 @@ class EmailService {
     }
 
     /**
+     * Read logo as Base64 data URL for inline embedding.
+     * Base64 inline is forward-safe — CID attachments are stripped when forwarded.
+     * @returns {string|null} data:image/png;base64,... or null
+     */
+    getLogoBase64() {
+        const pathMod = require('path');
+        const fsMod = require('fs');
+        const logoPath = pathMod.join(__dirname, '../../public/assets/img/logo.png');
+        try {
+            const buf = fsMod.readFileSync(logoPath);
+            return `data:image/png;base64,${buf.toString('base64')}`;
+        } catch {
+            logger.warn('Logo file not found, email will be sent without logo');
+            return null;
+        }
+    }
+
+    /**
+     * Read logo as CID attachment for inline embedding.
+     * Gmail blocks `data:` images, so CID is the most compatible for blast/reminder.
+     * @returns {{ cidRef: string, attachment: Object } | null}
+     */
+    getLogoCidAttachment() {
+        const pathMod = require('path');
+        const fsMod = require('fs');
+        const logoPath = pathMod.join(__dirname, '../../public/assets/img/logo.png');
+        try {
+            const buf = fsMod.readFileSync(logoPath);
+            const cid = 'csi-portal-logo@csi.local';
+            return {
+                cidRef: `cid:${cid}`,
+                attachment: {
+                    filename: 'csi-portal-logo.png',
+                    content: buf,
+                    contentType: 'image/png',
+                    cid: cid
+                }
+            };
+        } catch {
+            logger.warn('Logo file not found, email will be sent without logo');
+            return null;
+        }
+    }
+
+    /**
+     * Treat customMessage as plain text (strip any HTML).
+     * Prevents pasted HTML from showing as raw tags in email clients (Gmail/Outlook).
+     * @param {unknown} value
+     * @returns {string}
+     */
+    sanitizeEmailPlainText(value) {
+        if (value === null || value === undefined) {
+            return '';
+        }
+
+        let text = String(value);
+        text = text.replace(/\r\n?/g, '\n');
+
+        text = text
+            .replace(/&lt;/gi, '<')
+            .replace(/&gt;/gi, '>')
+            .replace(/&quot;/gi, '"')
+            .replace(/&#39;/g, "'")
+            .replace(/&amp;/gi, '&');
+
+        text = text.replace(/<[^>]*>/g, '');
+
+        text = text.replace(/[ \t]+\n/g, '\n').trim();
+        return text;
+    }
+
+    /**
      * Convert PNG data URL to Buffer
      * @param {string|null} dataUrl
      * @returns {Buffer|null}
@@ -599,8 +673,8 @@ class EmailService {
                         s.QRCodeDataUrl,
                         s.TargetRespondents,
                         sc.HeroImageUrl
-                    FROM Surveys s
-                    LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+                    FROM Events s
+                    LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
                     WHERE s.SurveyId = @surveyId
                 `);
 
@@ -685,6 +759,10 @@ class EmailService {
                 cid: qrCid
             } : null;
 
+            // Logo: Base64 inline (forward-safe — CID attachments are stripped on forward)
+            const logo = this.getLogoCidAttachment();
+            const safeCustomMessage = this.sanitizeEmailPlainText(customMessage);
+
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
@@ -699,14 +777,19 @@ class EmailService {
                     startDate: new Date(survey.StartDate).toLocaleDateString('id-ID'),
                     endDate: new Date(survey.EndDate).toLocaleDateString('id-ID'),
                     targetRespondents: survey.TargetRespondents,
-                    customMessage,
+                    customMessage: safeCustomMessage,
                     includeQrCode,
                     qrCodeDataUrl,
                     qrCodeImageSrc: qrImageSrc,
                     embedCover,
-                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null
+                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
+                    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+                    logoCid: logo ? logo.cidRef : null
                 },
-                attachments: qrAttachment ? [qrAttachment] : [],
+                attachments: [
+                    ...(logo ? [logo.attachment] : []),
+                    ...(qrAttachment ? [qrAttachment] : [])
+                ],
                 surveyId,
                 emailType: 'Blast'
             }));
@@ -722,6 +805,24 @@ class EmailService {
             logger.error('Failed to send survey blast:', error);
             throw error;
         }
+    }
+
+    /**
+     * Convert PNG data URL to Buffer
+     * @param {string|null} dataUrl
+     * @returns {Buffer|null}
+     */
+    dataUrlToBuffer(dataUrl) {
+        if (!dataUrl || typeof dataUrl !== 'string') {
+            return null;
+        }
+
+        const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+        if (!match || !match[1]) {
+            return null;
+        }
+
+        return Buffer.from(match[1], 'base64');
     }
 
     /**
@@ -811,8 +912,8 @@ class EmailService {
                         s.EndDate,
                         s.SurveyLink,
                         sc.HeroImageUrl
-                    FROM Surveys s
-                    LEFT JOIN SurveyConfiguration sc ON s.SurveyId = sc.SurveyId
+                    FROM Events s
+                    LEFT JOIN EventConfiguration sc ON s.SurveyId = sc.SurveyId
                     WHERE s.SurveyId = @surveyId
                 `);
 
@@ -896,6 +997,9 @@ class EmailService {
 
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
+            const logo = this.getLogoCidAttachment();
+            const safeCustomMessage = this.sanitizeEmailPlainText(customMessage);
+
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
             const emails = filteredRecipients.map(recipient => ({
@@ -908,10 +1012,15 @@ class EmailService {
                     surveyLink: survey.SurveyLink || `${process.env.PUBLIC_SURVEY_BASE_URL || process.env.BASE_URL}/survey/${surveyId}`,
                     endDate: endDate.toLocaleDateString('id-ID'),
                     daysRemaining,
-                    customMessage,
+                    customMessage: safeCustomMessage,
                     embedCover,
-                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null
+                    heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
+                    baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+                    logoCid: logo ? logo.cidRef : null
                 },
+                attachments: [
+                    ...(logo ? [logo.attachment] : [])
+                ],
                 surveyId,
                 emailType: 'Reminder'
             }));
@@ -932,4 +1041,5 @@ class EmailService {
 
 // Export singleton instance
 module.exports = new EmailService();
+
 

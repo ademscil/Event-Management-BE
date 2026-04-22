@@ -21,6 +21,11 @@ const upload = multer({
   }
 });
 
+const surveyIdentifierValidation = param('id')
+  .trim()
+  .notEmpty().withMessage('Survey identifier is required')
+  .matches(/^([0-9]+|[0-9a-fA-F-]{36})$/).withMessage('Survey identifier must be a survey number or UUID');
+
 /**
  * Validation rules for creating a survey
  */
@@ -60,7 +65,7 @@ const createSurveyValidation = [
  * Validation rules for updating a survey
  */
 const updateSurveyValidation = [
-  param('id').isUUID().withMessage('Survey ID must be a valid UUID'),
+  surveyIdentifierValidation,
   body('title')
     .optional()
     .trim()

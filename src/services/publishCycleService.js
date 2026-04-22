@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const { randomUUID } = require('crypto');
 const db = require('../database/connection');
 
@@ -24,14 +26,20 @@ class PublishCycleService {
       return this.supportCache;
     }
 
-    const request = await this.makeRequest(connection);
-    const tableResult = await request.query(`
+    const objectResult = await (await this.makeRequest(connection)).query(`
       SELECT COUNT(1) AS Cnt
-      FROM sys.tables
-      WHERE name = 'SurveyPublishCycles'
+      FROM (
+        SELECT name
+        FROM sys.objects
+        WHERE name IN ('SurveyPublishCycles', 'EventPublishCycles')
+        UNION ALL
+        SELECT name
+        FROM sys.synonyms
+        WHERE name IN ('SurveyPublishCycles', 'EventPublishCycles')
+      ) AS SupportedObjects
     `);
 
-    if (Number(tableResult.recordset?.[0]?.Cnt || 0) === 0) {
+    if (Number(objectResult.recordset?.[0]?.Cnt || 0) === 0) {
       this.supportCache = false;
       return false;
     }
@@ -147,3 +155,4 @@ class PublishCycleService {
 }
 
 module.exports = new PublishCycleService();
+

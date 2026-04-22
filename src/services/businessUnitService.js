@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
@@ -39,14 +41,11 @@ class BusinessUnitService {
   }
 
   /**
-   * Validate code format
-   * @param {string} code - Code to validate
-   * @returns {boolean} True if valid
+   * Validate code format — no longer needed, Code is auto-increment
+   * Kept for backward compatibility
    */
   validateCode(code) {
-    // 2-20 characters, alphanumeric and hyphen only
-    const codeRegex = /^[a-zA-Z0-9-]{2,20}$/;
-    return codeRegex.test(code);
+    return true;
   }
 
   /**
@@ -58,11 +57,6 @@ class BusinessUnitService {
    */
   async createBusinessUnit(data) {
     try {
-      // Validate code
-      if (!this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
       // Validate name
       if (!data.name || data.name.trim().length === 0 || data.name.length > 200) {
         throw new ValidationError('Name is required and must be 1-200 characters');
@@ -70,27 +64,61 @@ class BusinessUnitService {
 
       const pool = await db.getPool();
 
-      // Check for duplicate code
-      const codeCheck = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
-        .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Code = @code');
-
-      if (codeCheck.recordset.length > 0) {
-        throw new ConflictError(`Business Unit with code '${data.code}' already exists`);
-      }
-
-      // Create Business Unit
+      // Create Business Unit — Code is auto-increment, no need to pass it
       const result = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
         .query(`
-          INSERT INTO BusinessUnits (Code, Name, IsActive, CreatedAt)
+          INSERT INTO BusinessUnits (Name, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@code, @name, 1, GETDATE())
+          VALUES (@name, 1, GETDATE())
         `);
 
-      logger.info('Business Unit created', { code: data.code });
-      return result.recordset[0];
+      const bu = result.recordset[0];
+      logger.info('Business Unit created', { name: data.name });
+
+      // Auto-create Division + Department dengan nama sama untuk BU non-Corporate HO
+      const isCorporateHo = data.name.trim().toLowerCase() === 'corporate ho';
+      if (!isCorporateHo) {
+        try {
+          const buNameClean = data.name.replace(/[^a-zA-Z0-9]/g, '').substring(0, 12).toUpperCase();
+          const divCode = `DIV-${buNameClean}`;
+          const deptCode = `DEPT-${buNameClean}`;
+
+          const divResult = await pool.request()
+            .input('businessUnitId', sql.UniqueIdentifier, bu.BusinessUnitId)
+            .input('name', sql.NVarChar(200), data.name)
+            .input('code', sql.NVarChar(50), divCode)
+            .query(`
+              INSERT INTO Divisions (BusinessUnitId, Code, Name, IsActive, CreatedAt)
+              OUTPUT INSERTED.DivisionId
+              VALUES (@businessUnitId, @code, @name, 1, GETDATE())
+            `);
+
+          const divisionId = divResult.recordset[0].DivisionId;
+
+          await pool.request()
+            .input('divisionId', sql.UniqueIdentifier, divisionId)
+            .input('name', sql.NVarChar(200), data.name)
+            .input('code', sql.NVarChar(50), deptCode)
+            .query(`
+              INSERT INTO Departments (DivisionId, Code, Name, IsActive, CreatedAt)
+              VALUES (@divisionId, @code, @name, 1, GETDATE())
+            `);
+
+          logger.info('Auto-created Division and Department for new BU', {
+            buName: data.name,
+            divisionId,
+          });
+        } catch (autoCreateError) {
+          // Jangan gagalkan create BU jika auto-create divisi/dept gagal
+          logger.warn('Failed to auto-create Division/Department for BU', {
+            buName: data.name,
+            error: autoCreateError.message,
+          });
+        }
+      }
+
+      return bu;
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
         throw error;
@@ -110,30 +138,12 @@ class BusinessUnitService {
     try {
       const pool = await db.getPool();
 
-      // Check if Business Unit exists
       const buCheck = await pool.request()
         .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
         .query('SELECT BusinessUnitId FROM BusinessUnits WHERE BusinessUnitId = @businessUnitId');
 
       if (buCheck.recordset.length === 0) {
         throw new NotFoundError('Business Unit not found');
-      }
-
-      // Validate code if provided
-      if (data.code && !this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
-      // Check for duplicate code if code is being changed
-      if (data.code) {
-        const codeCheck = await pool.request()
-          .input('code', sql.NVarChar(20), data.code)
-          .input('businessUnitId', sql.UniqueIdentifier, businessUnitId)
-          .query('SELECT BusinessUnitId FROM BusinessUnits WHERE Code = @code AND BusinessUnitId != @businessUnitId');
-
-        if (codeCheck.recordset.length > 0) {
-          throw new ConflictError(`Business Unit with code '${data.code}' already exists`);
-        }
       }
 
       // Validate name if provided
@@ -145,15 +155,11 @@ class BusinessUnitService {
         throw new ValidationError('isActive must be boolean');
       }
 
-      // Build update query
+      // Build update query — Code is auto-increment, never updated
       const updateFields = [];
       const request = pool.request();
       request.input('businessUnitId', sql.UniqueIdentifier, businessUnitId);
 
-      if (data.code !== undefined) {
-        updateFields.push('Code = @code');
-        request.input('code', sql.NVarChar(20), data.code);
-      }
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);
@@ -298,4 +304,5 @@ module.exports.BusinessUnitService = BusinessUnitService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+
 

@@ -37,9 +37,9 @@ BEGIN TRY
       UPDATE f
       SET DeptId = u.DepartmentId
       FROM dbo.Functions f
-      INNER JOIN dbo.Users u ON f.ITDeptHeadUserId = u.UserId
+      INNER JOIN dbo.Users u ON f.ITLeadUserId = u.UserId
       WHERE f.DeptId IS NULL
-        AND f.ITDeptHeadUserId IS NOT NULL
+        AND f.ITLeadUserId IS NOT NULL
         AND u.DepartmentId IS NOT NULL;
     ');
 

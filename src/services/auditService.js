@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const db = require('../database/connection');
 const logger = require('../config/logger');
 const { sanitizeAuditPayload } = require('../utils/auditHelpers');
@@ -607,4 +609,5 @@ class AuditService {
 }
 
 module.exports = new AuditService();
+
 

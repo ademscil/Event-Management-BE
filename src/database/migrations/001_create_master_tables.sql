@@ -115,19 +115,19 @@ BEGIN
         FunctionId UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
         Code NVARCHAR(20) NOT NULL UNIQUE,
         Name NVARCHAR(200) NOT NULL,
-        ITDeptHeadUserId UNIQUEIDENTIFIER NULL,
+        ITLeadUserId UNIQUEIDENTIFIER NULL,
         IsActive BIT NOT NULL DEFAULT 1,
         CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
         CreatedBy UNIQUEIDENTIFIER NULL,
         UpdatedAt DATETIME2 NULL,
         UpdatedBy UNIQUEIDENTIFIER NULL,
-        FOREIGN KEY (ITDeptHeadUserId) REFERENCES Users(UserId),
+        FOREIGN KEY (ITLeadUserId) REFERENCES Users(UserId),
         FOREIGN KEY (CreatedBy) REFERENCES Users(UserId),
         FOREIGN KEY (UpdatedBy) REFERENCES Users(UserId)
     );
 
     CREATE INDEX IX_Functions_Code ON Functions(Code);
-    CREATE INDEX IX_Functions_ITDeptHeadUserId ON Functions(ITDeptHeadUserId);
+    CREATE INDEX IX_Functions_ITLeadUserId ON Functions(ITLeadUserId);
     CREATE INDEX IX_Functions_IsActive ON Functions(IsActive);
 
     PRINT 'Functions table created successfully';
