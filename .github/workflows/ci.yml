@@ -1,4 +1,4 @@
-name: CI
+name: CI — Backend
 
 on:
   push:
@@ -10,9 +10,20 @@ on:
       - development
       - main
 
+concurrency:
+  group: be-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
-  test:
+  quality-gate:
+    name: Quality Gate
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     env:
       NODE_ENV: test
       PORT: 3000
@@ -24,7 +35,7 @@ jobs:
       DB_PORT: 1433
       DB_ENCRYPT: false
       DB_TRUST_SERVER_CERTIFICATE: true
-      JWT_SECRET: test-secret-key-at-least-32-characters
+      JWT_SECRET: test-secret-key-minimum-32-characters-long
       JWT_EXPIRATION: 8h
       JWT_REFRESH_EXPIRATION: 7d
       SESSION_TIMEOUT_MINUTES: 30
@@ -44,10 +55,40 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Run lint (optional)
+      - name: Lint
         run: npm run lint --if-present
 
-      - name: Run tests (CI profile)
+      - name: Run unit tests (CI profile)
         run: npm run test:ci
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: coverage/
+          retention-days: 14
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies (high severity)
+        run: npm audit --audit-level=high
+        continue-on-error: true

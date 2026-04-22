@@ -133,12 +133,14 @@ router.get('/mappings/function-app/details', requireAuth, requirePermission('map
 });
 router.post('/mappings/function-app', requireAuth, requirePermission('mappings:create'), mappingController.createFunctionAppMappingValidation, mappingController.createFunctionAppMapping);
 router.get('/mappings/function-app/export', requireAuth, requirePermission('mappings:read'), mappingController.exportFunctionAppMappingsToCSV);
+router.get('/mappings/function-app/template', requireAuth, requirePermission('mappings:read'), mappingController.downloadFunctionAppTemplate);
 router.get('/mappings/app-dept/hierarchical', requireAuth, requirePermission('mappings:read'), (req, res, next) => {
   req.query.hierarchical = 'true';
   return mappingController.getAppDeptMappings(req, res, next);
 });
 router.post('/mappings/app-dept', requireAuth, requirePermission('mappings:create'), mappingController.createAppDeptMappingValidation, mappingController.createAppDeptMapping);
 router.get('/mappings/app-dept/export', requireAuth, requirePermission('mappings:read'), mappingController.exportAppDeptMappingsToCSV);
+router.get('/mappings/app-dept/template', requireAuth, requirePermission('mappings:read'), mappingController.downloadAppDeptTemplate);
 
 // Surveys and questions
 router.get('/surveys', requireAuth, requirePermission('surveys:read'), surveyController.getSurveys);

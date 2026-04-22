@@ -427,6 +427,114 @@ async function exportAppDeptMappingsToCSV(req, res) {
 }
 
 /**
+ * Download Function-Application mapping Excel template
+ * GET /api/v1/mappings/function-app/template
+ */
+async function downloadFunctionAppTemplate(req, res) {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'CSI Portal';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Function-App Mapping');
+
+    sheet.columns = [
+      { header: 'Function Code', key: 'functionCode', width: 20 },
+      { header: 'Application Code', key: 'applicationCode', width: 20 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Add example rows
+    sheet.addRow({ functionCode: '101', applicationCode: '201' });
+    sheet.addRow({ functionCode: '102', applicationCode: '202' });
+
+    // Add instruction sheet
+    const infoSheet = workbook.addWorksheet('Petunjuk');
+    infoSheet.getCell('A1').value = 'Petunjuk Pengisian Template Mapping Function - Aplikasi';
+    infoSheet.getCell('A1').font = { bold: true, size: 13 };
+    infoSheet.getCell('A3').value = 'Kolom yang wajib diisi:';
+    infoSheet.getCell('A3').font = { bold: true };
+    infoSheet.getCell('A4').value = '1. Function Code  : Kode numerik Function (lihat Master Function)';
+    infoSheet.getCell('A5').value = '2. Application Code: Kode numerik Aplikasi (lihat Master Aplikasi)';
+    infoSheet.getCell('A7').value = 'Catatan:';
+    infoSheet.getCell('A7').font = { bold: true };
+    infoSheet.getCell('A8').value = '- Baris pertama adalah header, jangan diubah.';
+    infoSheet.getCell('A9').value = '- Satu baris = satu pasangan mapping Function → Aplikasi.';
+    infoSheet.getCell('A10').value = '- Duplikat akan dilewati secara otomatis.';
+    infoSheet.getColumn('A').width = 60;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=template-mapping-function-aplikasi.xlsx');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    logger.error('Download function-app template error:', error);
+    res.status(500).json({ error: 'Internal server error', message: 'Gagal mengunduh template' });
+  }
+}
+
+/**
+ * Download Application-Department mapping Excel template
+ * GET /api/v1/mappings/app-dept/template
+ */
+async function downloadAppDeptTemplate(req, res) {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'CSI Portal';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Dept-App Mapping');
+
+    sheet.columns = [
+      { header: 'Application Code', key: 'applicationCode', width: 20 },
+      { header: 'Department Code', key: 'departmentCode', width: 20 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Add example rows
+    sheet.addRow({ applicationCode: '201', departmentCode: '301' });
+    sheet.addRow({ applicationCode: '202', departmentCode: '302' });
+
+    // Add instruction sheet
+    const infoSheet = workbook.addWorksheet('Petunjuk');
+    infoSheet.getCell('A1').value = 'Petunjuk Pengisian Template Mapping Department - Aplikasi';
+    infoSheet.getCell('A1').font = { bold: true, size: 13 };
+    infoSheet.getCell('A3').value = 'Kolom yang wajib diisi:';
+    infoSheet.getCell('A3').font = { bold: true };
+    infoSheet.getCell('A4').value = '1. Application Code: Kode numerik Aplikasi (lihat Master Aplikasi)';
+    infoSheet.getCell('A5').value = '2. Department Code : Kode numerik Department (lihat Master Department)';
+    infoSheet.getCell('A7').value = 'Catatan:';
+    infoSheet.getCell('A7').font = { bold: true };
+    infoSheet.getCell('A8').value = '- Baris pertama adalah header, jangan diubah.';
+    infoSheet.getCell('A9').value = '- Satu baris = satu pasangan mapping Aplikasi → Department.';
+    infoSheet.getCell('A10').value = '- Duplikat akan dilewati secara otomatis.';
+    infoSheet.getColumn('A').width = 60;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=template-mapping-dept-aplikasi.xlsx');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    logger.error('Download app-dept template error:', error);
+    res.status(500).json({ error: 'Internal server error', message: 'Gagal mengunduh template' });
+  }
+}
+
+/**
  * Bulk import mappings from file
  * POST /api/v1/mappings/bulk-import
  * @param {Object} req - Express request object
@@ -495,6 +603,8 @@ module.exports = {
   deleteAppDeptMapping,
   exportAppDeptMappingsToCSV,
   bulkImportMappings,
+  downloadFunctionAppTemplate,
+  downloadAppDeptTemplate,
   createFunctionAppMappingValidation,
   createAppDeptMappingValidation
 };
