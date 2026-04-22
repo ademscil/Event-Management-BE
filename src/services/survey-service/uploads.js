@@ -18,8 +18,8 @@ async function saveFile(buffer, filename, subdirectory, { config, fs, logger }) 
   const filePath = path.join(fullPath, filename);
   await fs.writeFile(filePath, buffer);
 
-  // Simpan sebagai path relatif agar bisa diakses via FE proxy /uploads/...
-  return `/uploads/${subdirectory}/${filename}`;
+  const base = (config.baseUrl || '').replace(/\/$/, '');
+  return `${base}/uploads/${subdirectory}/${filename}`;
 }
 
 async function deleteFile(fileUrl, { config, fs, logger }) {
