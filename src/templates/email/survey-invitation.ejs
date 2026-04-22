@@ -32,22 +32,18 @@
               <!-- ── Header ── -->
               <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:linear-gradient(135deg, #c0392b 0%, #96281b 100%); border-radius:12px 12px 0 0;">
                 <tr>
-                  <td class="email-header" style="padding:24px 32px;">
+                  <td class="email-header" style="padding:20px 28px;">
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:rgba(255,255,255,0.9); font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">
-                          <% if (typeof logoCid !== 'undefined' && logoCid) { %>
-                          <img src="<%= logoCid %>" alt="PT Astra Otoparts Tbk" style="height:36px; width:auto; display:block;" />
-                          <% } else { %>
-                          PT ASTRA OTOPARTS TBK
-                          <% } %>
-                        </td>
-                        <td align="right" valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:#fff; font-size:20px; font-weight:800; letter-spacing:-0.02em;">
+                        <td valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:#fff; font-size:20px; font-weight:800; letter-spacing:-0.02em;">
                           CSI Portal
+                        </td>
+                        <td align="right" valign="middle" style="font-family:'Segoe UI',Arial,sans-serif; color:rgba(255,255,255,0.85); font-size:11px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;">
+                          PT ASTRA OTOPARTS TBK
                         </td>
                       </tr>
                     </table>
-                    <div style="height:1px; background:rgba(255,255,255,0.2); margin:14px 0 0;"></div>
+                    <div style="height:1px; background:rgba(255,255,255,0.2); margin:12px 0 0;"></div>
                   </td>
                 </tr>
               </table>
@@ -65,14 +61,20 @@
                     <!-- Card body -->
                     <table width="100%" cellpadding="0" cellspacing="0" border="0">
                       <tr>
-                        <td style="padding:36px 32px 32px;" class="email-body">
+                        <td style="padding:32px 28px 28px;" class="email-body">
 
-                          <!-- Badge -->
-                          <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                          <!-- Logo + badge row -->
+                          <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:20px;">
                             <tr>
-                              <td align="center" style="padding-bottom:20px;">
+                              <td valign="middle">
+                                <% if (typeof logoCid !== 'undefined' && logoCid) { %>
+                                <img src="<%= logoCid %>" alt="PT Astra Otoparts Tbk" width="36" height="36" style="width:36px; height:36px; display:inline-block; border-radius:6px; vertical-align:middle;" />
+                                <% } %>
+                              </td>
+                              <td align="center" valign="middle">
                                 <span style="display:inline-block; background:#fef2f2; border:1px solid #fecaca; color:#c0392b; font-size:11px; font-weight:700; padding:5px 14px; border-radius:999px; letter-spacing:0.06em; text-transform:uppercase; font-family:'Segoe UI',Arial,sans-serif;">📧 UNDANGAN SURVEY</span>
                               </td>
+                              <td width="36"></td>
                             </tr>
                           </table>
 

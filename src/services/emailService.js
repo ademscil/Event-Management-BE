@@ -324,11 +324,22 @@ class EmailService {
     }
 
     /**
-     * Convert PNG data URL to Buffer
-     * @param {string|null} dataUrl
-     * @returns {Buffer|null}
+     * Read logo as Base64 data URL for inline embedding.
+     * Base64 inline is forward-safe — CID attachments are stripped when forwarded.
+     * @returns {string|null} data:image/png;base64,... or null
      */
-    dataUrlToBuffer(dataUrl) {
+    getLogoBase64() {
+        const pathMod = require('path');
+        const fsMod = require('fs');
+        const logoPath = pathMod.join(__dirname, '../../public/assets/img/logo.png');
+        try {
+            const buf = fsMod.readFileSync(logoPath);
+            return `data:image/png;base64,${buf.toString('base64')}`;
+        } catch {
+            logger.warn('Logo file not found, email will be sent without logo');
+            return null;
+        }
+    }
         if (!dataUrl || typeof dataUrl !== 'string') {
             return null;
         }
@@ -687,23 +698,8 @@ class EmailService {
                 cid: qrCid
             } : null;
 
-            // Logo attachment (CID inline)
-            const path = require('path');
-            const fs = require('fs');
-            const logoPath = path.join(__dirname, '../../public/assets/img/logo.png');
-            const logoCid = `aop-logo@csi.local`;
-            let logoAttachment = null;
-            try {
-                const logoBuffer = fs.readFileSync(logoPath);
-                logoAttachment = {
-                    filename: 'logo.png',
-                    content: logoBuffer,
-                    contentType: 'image/png',
-                    cid: logoCid
-                };
-            } catch {
-                logger.warn('Logo file not found, email will be sent without logo');
-            }
+            // Logo: Base64 inline (forward-safe — CID attachments are stripped on forward)
+            const logoBase64 = this.getLogoBase64();
 
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
@@ -726,10 +722,9 @@ class EmailService {
                     embedCover,
                     heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
                     baseUrl: process.env.BASE_URL || 'http://localhost:3000',
-                    logoCid: logoAttachment ? `cid:${logoCid}` : null
+                    logoCid: logoBase64 || null
                 },
                 attachments: [
-                    ...(logoAttachment ? [logoAttachment] : []),
                     ...(qrAttachment ? [qrAttachment] : [])
                 ],
                 surveyId,
@@ -750,7 +745,11 @@ class EmailService {
     }
 
     /**
-     * Get non-respondents for a survey
+     * Convert PNG data URL to Buffer
+     * @param {string|null} dataUrl
+     * @returns {Buffer|null}
+     */
+    dataUrlToBuffer(dataUrl) {
      * @param {string} surveyId - Survey ID
      * @returns {Promise<Array>} Array of non-respondents
      */
@@ -921,23 +920,8 @@ class EmailService {
 
             logger.info(`Sending to ${filteredRecipients.length} recipients (${skippedCount} skipped)`);
 
-            // Logo attachment (CID inline)
-            const pathMod = require('path');
-            const fsMod = require('fs');
-            const logoPathR = pathMod.join(__dirname, '../../public/assets/img/logo.png');
-            const logoCidR = `aop-logo@csi.local`;
-            let logoAttachmentR = null;
-            try {
-                const logoBufferR = fsMod.readFileSync(logoPathR);
-                logoAttachmentR = {
-                    filename: 'logo.png',
-                    content: logoBufferR,
-                    contentType: 'image/png',
-                    cid: logoCidR
-                };
-            } catch {
-                logger.warn('Logo file not found, reminder will be sent without logo');
-            }
+            // Logo: Base64 inline (forward-safe)
+            const logoBase64R = this.getLogoBase64();
 
             // Prepare email options for batch sending
             const subjectLine = String(customSubject || '').trim() || survey.Title;
@@ -955,9 +939,9 @@ class EmailService {
                     embedCover,
                     heroCoverUrl: embedCover ? survey.HeroImageUrl : null,
                     baseUrl: process.env.BASE_URL || 'http://localhost:3000',
-                    logoCid: logoAttachmentR ? `cid:${logoCidR}` : null
+                    logoCid: logoBase64R || null
                 },
-                attachments: logoAttachmentR ? [logoAttachmentR] : [],
+                attachments: [],
                 surveyId,
                 emailType: 'Reminder'
             }));

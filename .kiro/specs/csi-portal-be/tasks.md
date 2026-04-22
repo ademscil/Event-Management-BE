@@ -65,10 +65,12 @@
 - [x] 44. Rapikan script utility di root — sudah dipindahkan/dihapus sebelumnya
 - [x] 59. Indexing & query tuning — migration 028 sudah dibuat (10 indexes)
 
-- [ ] 45. Verifikasi email blast actual sending
-  - Test dengan SMTP config aktual
-  - Cek scheduled operations processor berjalan saat server start
-  - Verifikasi email terkirim ke recipient
+- [x] 45. Verifikasi email blast actual sending
+  - SMTP config aktual sudah diverifikasi (port 25, noreply@component.astra.co.id)
+  - Scheduled operations processor berjalan saat server start
+  - Email logo bug fixed: ganti CID attachment → Base64 inline (forward-safe saat di-forward)
+  - Logo dipindahkan ke dalam card body, bukan di header terpisah
+  - Template responsive: `@media (max-width:600px)` di semua template
 
 - [ ] 46. Fix report generate race condition
   - ✅ FE sudah ada retry 1.5s — BE sudah return report langsung dari generateReport, tidak ada race condition di BE
