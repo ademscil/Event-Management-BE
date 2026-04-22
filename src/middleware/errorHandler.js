@@ -221,15 +221,20 @@ function asyncHandler(fn) {
  * @param {Object} res - Express response object
  */
 function notFoundHandler(req, res) {
-  res.status(404).json({
+  const isDevelopment = config.env !== 'production';
+  const response = {
     error: {
       message: 'Route not found',
       type: 'NotFoundError',
       statusCode: 404,
-      path: req.path,
-      method: req.method
     }
-  });
+  };
+  // Only expose path/method in development to avoid information leakage
+  if (isDevelopment) {
+    response.error.path = req.path;
+    response.error.method = req.method;
+  }
+  res.status(404).json(response);
 }
 
 /**

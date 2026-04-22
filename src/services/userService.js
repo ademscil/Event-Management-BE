@@ -1,8 +1,10 @@
-const sql = require('mssql');
-const bcrypt = require('bcrypt');
+const sql = require('../database/sql-client');
+
+  
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
+const { hashPasswordLegacy, verifyPassword } = require('../utils/passwordHash');
 
 /**
  * Custom error classes
@@ -37,8 +39,48 @@ class NotFoundError extends Error {
 class UserService {
   constructor() {
     this.repository = new BaseRepository('Users', 'UserId');
-    this.saltRounds = 10;
     this.corporateHoName = 'Corporate HO';
+  }
+
+  isUuid(value) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+  }
+
+  mapUserRecord(user) {
+    if (!user) {
+      return user;
+    }
+
+    const mappedUser = { ...user };
+    mappedUser.UserKey = mappedUser.Username;
+    delete mappedUser.PasswordHash;
+    return mappedUser;
+  }
+
+  async resolveUserId(userIdentifier) {
+    const normalizedIdentifier = String(userIdentifier || '').trim();
+    if (!normalizedIdentifier) {
+      throw new ValidationError('User identifier is required');
+    }
+
+    if (this.isUuid(normalizedIdentifier)) {
+      return normalizedIdentifier;
+    }
+
+    const pool = await db.getPool();
+    const result = await pool.request()
+      .input('username', sql.NVarChar(50), normalizedIdentifier)
+      .query(`
+        SELECT TOP 1 UserId
+        FROM Users
+        WHERE Username = @username
+      `);
+
+    if (result.recordset.length === 0) {
+      throw new NotFoundError('User not found');
+    }
+
+    return result.recordset[0].UserId;
   }
 
   /**
@@ -223,6 +265,28 @@ class UserService {
     return emailRegex.test(email);
   }
 
+  normalizePhoneNumber(phoneNumber) {
+    const digits = String(phoneNumber || '').replace(/\D/g, '');
+    if (!digits) {
+      return null;
+    }
+
+    if (digits.startsWith('62')) {
+      return digits;
+    }
+
+    if (digits.startsWith('0')) {
+      return `62${digits.slice(1)}`;
+    }
+
+    return digits;
+  }
+
+  validatePhoneNumber(phoneNumber) {
+    const normalized = this.normalizePhoneNumber(phoneNumber);
+    return !normalized || (normalized.length >= 10 && normalized.length <= 15);
+  }
+
   /**
    * Validate username format
    * @param {string} username - Username
@@ -263,6 +327,10 @@ class UserService {
         throw new ValidationError(`Role must be one of: ${validRoles.join(', ')}`);
       }
 
+      if (data.phoneNumber !== undefined && !this.validatePhoneNumber(data.phoneNumber)) {
+        throw new ValidationError('Invalid phone number format');
+      }
+
       const pool = await db.getPool();
       const orgHierarchy = await this.validateOrgHierarchy(
         pool,
@@ -289,6 +357,17 @@ class UserService {
         throw new ConflictError(`Email '${data.email}' already exists`);
       }
 
+      const normalizedPhoneNumber = this.normalizePhoneNumber(data.phoneNumber);
+      if (normalizedPhoneNumber) {
+        const phoneCheck = await pool.request()
+          .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
+          .query('SELECT UserId FROM Users WHERE PhoneNumber = @phoneNumber');
+
+        if (phoneCheck.recordset.length > 0) {
+          throw new ConflictError(`Phone number '${normalizedPhoneNumber}' already exists`);
+        }
+      }
+
       // Handle password hashing for non-LDAP users
       let passwordHash = null;
       const useLDAP = data.useLDAP !== false; // Default to true
@@ -300,7 +379,7 @@ class UserService {
         if (data.password.length < 8) {
           throw new ValidationError('Password must be at least 8 characters');
         }
-        passwordHash = await bcrypt.hash(data.password, this.saltRounds);
+        passwordHash = hashPasswordLegacy(data.password);
       }
 
       // Create user
@@ -309,6 +388,7 @@ class UserService {
         .input('displayName', sql.NVarChar(200), data.displayName)
         .input('npk', sql.NVarChar(50), data.npk || null)
         .input('email', sql.NVarChar(200), data.email)
+        .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
         .input('role', sql.NVarChar(50), data.role)
         .input('useLDAP', sql.Bit, useLDAP)
         .input('passwordHash', sql.NVarChar(255), passwordHash)
@@ -317,12 +397,12 @@ class UserService {
         .input('departmentId', sql.UniqueIdentifier, orgHierarchy.departmentId ?? null)
         .query(`
           INSERT INTO Users (
-            Username, NPK, DisplayName, Email, Role, UseLDAP, PasswordHash,
+            Username, NPK, DisplayName, Email, PhoneNumber, Role, UseLDAP, PasswordHash,
             BusinessUnitId, DivisionId, DepartmentId, IsActive, CreatedAt
           )
           OUTPUT INSERTED.*
           VALUES (
-            @username, @npk, @displayName, @email, @role, @useLDAP, @passwordHash,
+            @username, @npk, @displayName, @email, @phoneNumber, @role, @useLDAP, @passwordHash,
             @businessUnitId, @divisionId, @departmentId, 1, GETDATE()
           )
         `);
@@ -330,9 +410,7 @@ class UserService {
       logger.info('User created', { username: data.username, useLDAP });
       
       // Remove password hash from response
-      const user = result.recordset[0];
-      delete user.PasswordHash;
-      return user;
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
         throw error;
@@ -350,11 +428,12 @@ class UserService {
    */
   async updateUser(userId, data) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       const pool = await db.getPool();
 
       // Check if user exists
       const userCheck = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .query(`
           SELECT UserId, Username, NPK, BusinessUnitId, DivisionId, DepartmentId
           FROM Users
@@ -370,6 +449,10 @@ class UserService {
         throw new ValidationError('Invalid email format');
       }
 
+      if (data.phoneNumber !== undefined && !this.validatePhoneNumber(data.phoneNumber)) {
+        throw new ValidationError('Invalid phone number format');
+      }
+
       // Validate username if provided
       if (data.username !== undefined) {
         const normalizedUsername = String(data.username || '').trim();
@@ -379,7 +462,7 @@ class UserService {
 
         const usernameCheck = await pool.request()
           .input('username', sql.NVarChar(50), normalizedUsername)
-          .input('userId', sql.UniqueIdentifier, userId)
+          .input('userId', sql.UniqueIdentifier, resolvedUserId)
           .query('SELECT UserId FROM Users WHERE Username = @username AND UserId != @userId');
 
         if (usernameCheck.recordset.length > 0) {
@@ -391,11 +474,25 @@ class UserService {
       if (data.email) {
         const emailCheck = await pool.request()
           .input('email', sql.NVarChar(200), data.email)
-          .input('userId', sql.UniqueIdentifier, userId)
+          .input('userId', sql.UniqueIdentifier, resolvedUserId)
           .query('SELECT UserId FROM Users WHERE Email = @email AND UserId != @userId');
 
         if (emailCheck.recordset.length > 0) {
           throw new ConflictError(`Email '${data.email}' already exists`);
+        }
+      }
+
+      const normalizedPhoneNumber = data.phoneNumber !== undefined
+        ? this.normalizePhoneNumber(data.phoneNumber)
+        : undefined;
+      if (normalizedPhoneNumber) {
+        const phoneCheck = await pool.request()
+          .input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber)
+          .input('userId', sql.UniqueIdentifier, resolvedUserId)
+          .query('SELECT UserId FROM Users WHERE PhoneNumber = @phoneNumber AND UserId != @userId');
+
+        if (phoneCheck.recordset.length > 0) {
+          throw new ConflictError(`Phone number '${normalizedPhoneNumber}' already exists`);
         }
       }
 
@@ -424,7 +521,7 @@ class UserService {
       // Build update query dynamically
       const updateFields = [];
       const request = pool.request();
-      request.input('userId', sql.UniqueIdentifier, userId);
+      request.input('userId', sql.UniqueIdentifier, resolvedUserId);
 
       if (data.npk !== undefined) {
         updateFields.push('NPK = @npk');
@@ -441,6 +538,10 @@ class UserService {
       if (data.email !== undefined) {
         updateFields.push('Email = @email');
         request.input('email', sql.NVarChar(200), data.email);
+      }
+      if (data.phoneNumber !== undefined) {
+        updateFields.push('PhoneNumber = @phoneNumber');
+        request.input('phoneNumber', sql.NVarChar(30), normalizedPhoneNumber);
       }
       if (data.role !== undefined) {
         updateFields.push('Role = @role');
@@ -476,12 +577,8 @@ class UserService {
         WHERE UserId = @userId
       `);
 
-      logger.info('User updated', { userId });
-      
-      // Remove password hash from response
-      const user = result.recordset[0];
-      delete user.PasswordHash;
-      return user;
+      logger.info('User updated', { userId: resolvedUserId, userIdentifier: userId });
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError' || error.name === 'NotFoundError') {
         throw error;
@@ -498,10 +595,11 @@ class UserService {
    */
   async deactivateUser(userId) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       const pool = await db.getPool();
 
       const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .query(`
           UPDATE Users
           SET IsActive = 0, UpdatedAt = GETDATE()
@@ -513,12 +611,8 @@ class UserService {
         throw new NotFoundError('User not found');
       }
 
-      logger.info('User deactivated', { userId });
-      
-      // Remove password hash from response
-      const user = result.recordset[0];
-      delete user.PasswordHash;
-      return user;
+      logger.info('User deactivated', { userId: resolvedUserId, userIdentifier: userId });
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       if (error.name === 'NotFoundError') {
         throw error;
@@ -535,9 +629,10 @@ class UserService {
    */
   async getUserById(userId) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       const pool = await db.getPool();
       const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .query(`
           SELECT
             u.UserId,
@@ -545,6 +640,7 @@ class UserService {
             u.NPK,
             u.DisplayName,
             u.Email,
+            u.PhoneNumber,
             u.Role,
             u.UseLDAP,
             u.IsActive,
@@ -567,7 +663,7 @@ class UserService {
         return null;
       }
 
-      return result.recordset[0];
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       logger.error('Error getting user by ID:', error);
       throw error;
@@ -600,7 +696,7 @@ class UserService {
       }
 
       if (filter.search) {
-        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search)");
+        conditions.push("(u.Username LIKE @search OR ISNULL(u.NPK,'') LIKE @search OR u.DisplayName LIKE @search OR u.Email LIKE @search OR ISNULL(u.PhoneNumber,'') LIKE @search)");
         request.input('search', sql.NVarChar(210), `%${filter.search}%`);
       }
 
@@ -616,6 +712,7 @@ class UserService {
             u.NPK,
             u.DisplayName,
           u.Email,
+          u.PhoneNumber,
           u.Role,
           u.UseLDAP,
           u.IsActive,
@@ -640,7 +737,7 @@ class UserService {
       query += ' ORDER BY u.DisplayName';
 
       const result = await request.query(query);
-      return result.recordset;
+      return result.recordset.map((user) => this.mapUserRecord(user));
     } catch (error) {
       logger.error('Error getting users:', error);
       throw error;
@@ -655,12 +752,13 @@ class UserService {
    */
   async toggleUserLDAP(userId, useLDAP) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       const pool = await db.getPool();
 
       // If switching to non-LDAP, ensure password is set
       if (!useLDAP) {
         const userCheck = await pool.request()
-          .input('userId', sql.UniqueIdentifier, userId)
+          .input('userId', sql.UniqueIdentifier, resolvedUserId)
           .query('SELECT PasswordHash FROM Users WHERE UserId = @userId');
 
         if (userCheck.recordset.length === 0) {
@@ -673,7 +771,7 @@ class UserService {
       }
 
       const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .input('useLDAP', sql.Bit, useLDAP)
         .query(`
           UPDATE Users
@@ -686,12 +784,8 @@ class UserService {
         throw new NotFoundError('User not found');
       }
 
-      logger.info('User LDAP toggle updated', { userId, useLDAP });
-      
-      // Remove password hash from response
-      const user = result.recordset[0];
-      delete user.PasswordHash;
-      return user;
+      logger.info('User LDAP toggle updated', { userId: resolvedUserId, userIdentifier: userId, useLDAP });
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
         throw error;
@@ -709,6 +803,7 @@ class UserService {
    */
   async setUserPassword(userId, password) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       if (!password || password.length < 8) {
         throw new ValidationError('Password must be at least 8 characters');
       }
@@ -717,7 +812,7 @@ class UserService {
 
       // Check if user exists
       const userCheck = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .query('SELECT UserId FROM Users WHERE UserId = @userId');
 
       if (userCheck.recordset.length === 0) {
@@ -725,10 +820,10 @@ class UserService {
       }
 
       // Hash password
-      const passwordHash = await bcrypt.hash(password, this.saltRounds);
+      const passwordHash = hashPasswordLegacy(password);
 
       const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .input('passwordHash', sql.NVarChar(255), passwordHash)
         .query(`
           UPDATE Users
@@ -737,12 +832,8 @@ class UserService {
           WHERE UserId = @userId
         `);
 
-      logger.info('User password updated', { userId });
-      
-      // Remove password hash from response
-      const user = result.recordset[0];
-      delete user.PasswordHash;
-      return user;
+      logger.info('User password updated', { userId: resolvedUserId, userIdentifier: userId });
+      return this.mapUserRecord(result.recordset[0]);
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'NotFoundError') {
         throw error;
@@ -760,10 +851,11 @@ class UserService {
    */
   async verifyPassword(userId, password) {
     try {
+      const resolvedUserId = await this.resolveUserId(userId);
       const pool = await db.getPool();
 
       const result = await pool.request()
-        .input('userId', sql.UniqueIdentifier, userId)
+        .input('userId', sql.UniqueIdentifier, resolvedUserId)
         .query('SELECT PasswordHash, UseLDAP FROM Users WHERE UserId = @userId AND IsActive = 1');
 
       if (result.recordset.length === 0) {
@@ -780,7 +872,7 @@ class UserService {
         return false;
       }
 
-      return await bcrypt.compare(password, user.PasswordHash);
+      return await verifyPassword(password, user.PasswordHash);
     } catch (error) {
       if (error.name === 'ValidationError') {
         throw error;
@@ -797,4 +889,6 @@ module.exports = userService;
 module.exports.UserService = UserService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
-module.exports.NotFoundError = NotFoundError;
+module.exports.NotFoundError = NotFoundError;
+
+

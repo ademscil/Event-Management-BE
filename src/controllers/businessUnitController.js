@@ -1,16 +1,29 @@
 const { body, param, validationResult } = require('express-validator');
 const businessUnitService = require('../services/businessUnitService');
+const bulkImportService = require('../services/bulkImportService');
+const ExcelJS = require('exceljs');
 const logger = require('../config/logger');
+
+function handleServiceError(res, error, fallbackMessage) {
+  const statusCode = error.statusCode || 500;
+  if (statusCode >= 500) {
+    logger.error(fallbackMessage, error);
+    return res.status(500).json({
+      error: 'Internal server error',
+      message: fallbackMessage
+    });
+  }
+
+  return res.status(statusCode).json({
+    error: error.name || 'Request failed',
+    message: error.message
+  });
+}
 
 /**
  * Validation rules for creating a business unit
  */
 const createBusinessUnitValidation = [
-  body('code')
-    .trim()
-    .notEmpty().withMessage('Code is required')
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .trim()
     .notEmpty().withMessage('Name is required')
@@ -22,11 +35,6 @@ const createBusinessUnitValidation = [
  */
 const updateBusinessUnitValidation = [
   param('id').isUUID().withMessage('Business Unit ID must be a valid UUID'),
-  body('code')
-    .optional()
-    .trim()
-    .isLength({ min: 2, max: 20 }).withMessage('Code must be between 2 and 20 characters')
-    .matches(/^[a-zA-Z0-9-]+$/).withMessage('Code can only contain letters, numbers, and hyphens'),
   body('name')
     .optional()
     .trim()
@@ -52,28 +60,17 @@ async function createBusinessUnit(req, res) {
       });
     }
 
-    const { code, name } = req.body;
-    const result = await businessUnitService.createBusinessUnit({ code, name });
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit creation failed',
-        message: result.errorMessage
-      });
-    }
+    const { name } = req.body;
+    const businessUnit = await businessUnitService.createBusinessUnit({ name });
 
     res.status(201).json({
       success: true,
       message: 'Business unit created successfully',
-      businessUnit: result.businessUnit
+      businessUnit
     });
 
   } catch (error) {
-    logger.error('Create business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while creating business unit');
   }
 }
 
@@ -153,27 +150,16 @@ async function updateBusinessUnit(req, res) {
     const buId = req.params.id;
     const updates = req.body;
 
-    const result = await businessUnitService.updateBusinessUnit(buId, updates);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit update failed',
-        message: result.errorMessage
-      });
-    }
+    const businessUnit = await businessUnitService.updateBusinessUnit(buId, updates);
 
     res.json({
       success: true,
       message: 'Business unit updated successfully',
-      businessUnit: result.businessUnit
+      businessUnit
     });
 
   } catch (error) {
-    logger.error('Update business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while updating business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while updating business unit');
   }
 }
 
@@ -186,14 +172,7 @@ async function updateBusinessUnit(req, res) {
 async function deleteBusinessUnit(req, res) {
   try {
     const buId = req.params.id;
-    const result = await businessUnitService.deleteBusinessUnit(buId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Business unit deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await businessUnitService.deleteBusinessUnit(buId);
 
     res.json({
       success: true,
@@ -201,11 +180,7 @@ async function deleteBusinessUnit(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete business unit controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting business unit'
-    });
+    return handleServiceError(res, error, 'An error occurred while deleting business unit');
   }
 }
 
@@ -215,7 +190,85 @@ module.exports = {
   getBusinessUnitById,
   updateBusinessUnit,
   deleteBusinessUnit,
+  downloadTemplate,
+  uploadBusinessUnits,
   createBusinessUnitValidation,
   updateBusinessUnitValidation
 };
+
+/**
+ * Download Excel template for bulk upload
+ * GET /api/v1/business-units/template
+ */
+async function downloadTemplate(req, res) {
+  try {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Business Units');
+
+    sheet.columns = [
+      { header: 'BU Name', key: 'name', width: 40 },
+      { header: 'Status', key: 'status', width: 15 },
+    ];
+
+    // Header style
+    sheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    });
+
+    // Example rows
+    sheet.addRow({ name: 'Corporate HO', status: 'Active' });
+    sheet.addRow({ name: 'Main Dealer Jakarta', status: 'Active' });
+
+    // Note row
+    sheet.addRow([]);
+    const noteRow = sheet.addRow(['Catatan: Kolom Status diisi Active atau Inactive. BU Code di-generate otomatis.']);
+    noteRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="master-bu-template.xlsx"');
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (error) {
+    logger.error('Download BU template error:', error);
+    res.status(500).json({ success: false, message: 'Gagal generate template' });
+  }
+}
+
+/**
+ * Upload bulk business units from Excel
+ * POST /api/v1/business-units/upload
+ */
+async function uploadBusinessUnits(req, res) {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
+    }
+
+    const result = await bulkImportService.importData(
+      req.file.buffer,
+      'BusinessUnit',
+      { skipDuplicates: true, updateExisting: true }
+    );
+
+    return res.json({
+      success: true,
+      message: `Import selesai. Berhasil: ${result.imported + result.updated}, Gagal: ${result.failed}`,
+      imported: result.imported,
+      updated: result.updated,
+      failed: result.failed,
+      errors: result.errors,
+    });
+  } catch (error) {
+    logger.error('Upload BU error:', error);
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({
+      success: false,
+      message: error.message || 'Gagal upload data Business Unit',
+      errors: error.errors || [],
+    });
+  }
+}
 

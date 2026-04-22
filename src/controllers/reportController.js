@@ -2,6 +2,16 @@ const { param, query, validationResult } = require('express-validator');
 const reportService = require('../services/reportService');
 const logger = require('../config/logger');
 
+function buildExportFilename(title, extension) {
+  const normalized = String(title || 'report')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+  const safeName = normalized || 'report';
+  return `report-${safeName}.${extension}`;
+}
+
 function handleReportError(error, res, fallbackMessage) {
   const name = String(error?.name || '');
   if (name === 'ValidationError') {
@@ -51,6 +61,32 @@ async function generateReport(req, res) {
   } catch (error) {
     logger.error('Generate report controller error:', error);
     return handleReportError(error, res, 'An error occurred while generating report');
+  }
+}
+
+/**
+ * View generated report
+ * POST /api/v1/reports/view
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ */
+async function viewReport(req, res) {
+  try {
+    const request = {
+      ...req.body,
+      userId: req.user?.userId,
+      userRole: req.user?.role,
+    };
+    const report = await reportService.viewReport(request);
+
+    res.json({
+      success: true,
+      report
+    });
+
+  } catch (error) {
+    logger.error('View report controller error:', error);
+    return handleReportError(error, res, 'An error occurred while fetching report');
   }
 }
 
@@ -258,9 +294,11 @@ async function exportToExcel(req, res) {
       userRole: req.user?.role,
     };
     const buffer = await reportService.exportToExcel(request);
+    const report = await reportService.viewReport(request);
+    const filename = buildExportFilename(report?.survey?.title, 'xlsx');
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=report.xlsx');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
 
   } catch (error) {
@@ -283,9 +321,11 @@ async function exportToPdf(req, res) {
       userRole: req.user?.role,
     };
     const buffer = await reportService.exportToPdf(request);
+    const report = await reportService.viewReport(request);
+    const filename = buildExportFilename(report?.survey?.title, 'pdf');
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=report.pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
 
   } catch (error) {
@@ -321,6 +361,7 @@ async function getAggregateStatistics(req, res) {
 
 module.exports = {
   generateReport,
+  viewReport,
   generateBeforeTakeoutReport,
   generateAfterTakeoutReport,
   getReportSelectionList,

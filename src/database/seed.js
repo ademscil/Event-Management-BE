@@ -1,7 +1,9 @@
-const sql = require('mssql');
-const bcrypt = require('bcrypt');
+const sql = require('./sql-client');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
+const { hashPasswordLegacy } = require('../utils/passwordHash');
 
 /**
  * Database seed script
@@ -72,7 +74,7 @@ class DatabaseSeeder {
           Email: 'superadmin@astraotoparts.com',
           Role: 'SuperAdmin',
           UseLDAP: false,
-          PasswordHash: await bcrypt.hash('Admin123!', 10),
+          PasswordHash: hashPasswordLegacy('Admin123!'),
           IsActive: true
         },
         {
@@ -81,7 +83,7 @@ class DatabaseSeeder {
           Email: 'admin.event@astraotoparts.com',
           Role: 'AdminEvent',
           UseLDAP: false,
-          PasswordHash: await bcrypt.hash('Admin123!', 10),
+          PasswordHash: hashPasswordLegacy('Admin123!'),
           IsActive: true
         },
         {
@@ -90,7 +92,7 @@ class DatabaseSeeder {
           Email: 'it.lead@astraotoparts.com',
           Role: 'ITLead',
           UseLDAP: false,
-          PasswordHash: await bcrypt.hash('Admin123!', 10),
+          PasswordHash: hashPasswordLegacy('Admin123!'),
           IsActive: true
         },
         {
@@ -99,7 +101,7 @@ class DatabaseSeeder {
           Email: 'dept.head@astraotoparts.com',
           Role: 'DepartmentHead',
           UseLDAP: false,
-          PasswordHash: await bcrypt.hash('Admin123!', 10),
+          PasswordHash: hashPasswordLegacy('Admin123!'),
           IsActive: true
         }
       ];
@@ -287,23 +289,32 @@ class DatabaseSeeder {
       logger.info('Seeding functions...');
 
       const functions = [
-        { Code: 'FN001', Name: 'ERP System' },
-        { Code: 'FN002', Name: 'CRM System' },
-        { Code: 'FN003', Name: 'HR Management' },
-        { Code: 'FN004', Name: 'Financial Reporting' },
-        { Code: 'FN005', Name: 'Inventory Management' },
-        { Code: 'FN006', Name: 'Quality Management' },
-        { Code: 'FN007', Name: 'Document Management' },
-        { Code: 'FN008', Name: 'Business Intelligence' }
+        { Code: 'FN001', Name: 'ERP System', DepartmentCode: 'DEPT010' },
+        { Code: 'FN002', Name: 'CRM System', DepartmentCode: 'DEPT011' },
+        { Code: 'FN003', Name: 'HR Management', DepartmentCode: 'DEPT011' },
+        { Code: 'FN004', Name: 'Financial Reporting', DepartmentCode: 'DEPT011' },
+        { Code: 'FN005', Name: 'Inventory Management', DepartmentCode: 'DEPT010' },
+        { Code: 'FN006', Name: 'Quality Management', DepartmentCode: 'DEPT010' },
+        { Code: 'FN007', Name: 'Document Management', DepartmentCode: 'DEPT011' },
+        { Code: 'FN008', Name: 'Business Intelligence', DepartmentCode: 'DEPT011' }
       ];
+
+      const deptResult = await this.pool.request()
+        .query('SELECT DepartmentId, Code FROM Departments');
+
+      const deptMap = {};
+      deptResult.recordset.forEach(dept => {
+        deptMap[dept.Code] = dept.DepartmentId;
+      });
 
       for (const func of functions) {
         await this.pool.request()
           .input('Code', sql.NVarChar, func.Code)
           .input('Name', sql.NVarChar, func.Name)
+          .input('DeptId', sql.UniqueIdentifier, deptMap[func.DepartmentCode] || null)
           .query(`
-            INSERT INTO Functions (Code, Name, IsActive)
-            VALUES (@Code, @Name, 1)
+            INSERT INTO Functions (Code, Name, DeptId, IsActive)
+            VALUES (@Code, @Name, @DeptId, 1)
           `);
       }
 
@@ -450,3 +461,4 @@ if (require.main === module) {
 }
 
 module.exports = DatabaseSeeder;
+

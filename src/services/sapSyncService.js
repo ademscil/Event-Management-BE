@@ -1,10 +1,12 @@
+const sql = require('../database/sql-client');
 const sapClient = require('./sapClient');
 const { BusinessUnitService } = require('./businessUnitService');
 const { DivisionService } = require('./divisionService');
 const { DepartmentService } = require('./departmentService');
 const logger = require('../config/logger');
 const db = require('../database/connection');
-const sql = require('mssql');
+
+  
 
 /**
  * SAP Sync Service
@@ -562,3 +564,4 @@ class SAPSyncService {
 }
 
 module.exports = new SAPSyncService();
+

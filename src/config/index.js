@@ -34,6 +34,7 @@ const config = {
   env: process.env.NODE_ENV || 'development',
   port: parseInt(process.env.PORT, 10) || 3000,
   baseUrl: process.env.BASE_URL || 'http://localhost:3000',
+  publicSurveyBaseUrl: process.env.PUBLIC_SURVEY_BASE_URL || process.env.BASE_URL || 'http://localhost:3000',
 
   // Database Configuration
   database: {
@@ -85,6 +86,22 @@ const config = {
     from: process.env.SMTP_FROM
   },
 
+  // Phone OTP Configuration
+  phoneOtp: {
+    provider: process.env.PHONE_OTP_PROVIDER || '',
+    infobip: {
+      baseUrl: process.env.INFOBIP_BASE_URL || '',
+      apiKey: process.env.INFOBIP_API_KEY || '',
+      smsSender: process.env.INFOBIP_SMS_SENDER || 'ServiceSMS',
+      whatsappSender: process.env.INFOBIP_WHATSAPP_SENDER || '',
+    },
+    twilio: {
+      accountSid: process.env.TWILIO_ACCOUNT_SID || '',
+      authToken: process.env.TWILIO_AUTH_TOKEN || '',
+      verifyServiceSid: process.env.TWILIO_VERIFY_SERVICE_SID || '',
+    }
+  },
+
   // SAP Integration
   sap: {
     apiUrl: process.env.SAP_API_URL,
@@ -125,8 +142,45 @@ const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
     file: process.env.LOG_FILE || 'logs/app.log'
+  },
+
+  // Development startup retry
+  startup: {
+    dbRetryEnabled: process.env.DB_RETRY_ENABLED !== 'false',
+    dbRetryIntervalMs: parseInt(process.env.DB_RETRY_INTERVAL_MS, 10) || 5000,
+    dbRetryMaxAttempts: parseInt(process.env.DB_RETRY_MAX_ATTEMPTS, 10) || 0
   }
 };
+
+function isLocalDbServer(serverName) {
+  return /^\(localdb\)\\/i.test(String(serverName || '').trim());
+}
+
+const usesLocalDb = isLocalDbServer(config.database.server);
+
+if (usesLocalDb) {
+  config.database = {
+    connectionString: `Driver={ODBC Driver 17 for SQL Server};Server=${config.database.server};Database=${config.database.database};Trusted_Connection=Yes;`,
+    server: config.database.server,
+    database: config.database.database,
+    options: {
+      trustedConnection: true,
+      trustServerCertificate: true,
+      encrypt: false,
+      enableArithAbort: true,
+      connectionTimeout: 30000,
+      requestTimeout: 30000,
+    },
+    pool: {
+      max: 10,
+      min: 0,
+      idleTimeoutMillis: 30000
+    },
+    dialect: 'localdb'
+  };
+} else {
+  config.database.dialect = 'sqlserver';
+}
 
 /**
  * Validate required configuration
@@ -137,11 +191,14 @@ function validateConfig() {
   // Required fields
   const required = {
     'database.server': config.database.server,
-    'database.user': config.database.user,
-    'database.password': config.database.password,
     'database.database': config.database.database,
     'jwt.secret': config.jwt.secret
   };
+
+  if (!usesLocalDb) {
+    required['database.user'] = config.database.user;
+    required['database.password'] = config.database.password;
+  }
 
   // Check required fields
   for (const [key, value] of Object.entries(required)) {

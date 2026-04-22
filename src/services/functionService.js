@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
@@ -39,30 +41,21 @@ class FunctionService {
   }
 
   /**
-   * Validate code format
-   * @param {string} code - Code to validate
-   * @returns {boolean} True if valid
+   * Validate code format — no longer needed, Code is auto-increment
+   * Kept for backward compatibility
    */
   validateCode(code) {
-    // 2-20 characters, alphanumeric and hyphen only
-    const codeRegex = /^[a-zA-Z0-9-]{2,20}$/;
-    return codeRegex.test(code);
+    return true;
   }
 
   /**
    * Create a new Function
    * @param {Object} data - Function data
-   * @param {string} data.code - Unique code (2-20 chars, alphanumeric + hyphen)
    * @param {string} data.name - Function name (1-200 chars)
    * @returns {Promise<Object>} Created Function
    */
   async createFunction(data) {
     try {
-      // Validate code
-      if (!this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
       // Validate name
       if (!data.name || data.name.trim().length === 0 || data.name.length > 200) {
         throw new ValidationError('Name is required and must be 1-200 characters');
@@ -70,26 +63,27 @@ class FunctionService {
 
       const pool = await db.getPool();
 
-      // Check for duplicate code
-      const codeCheck = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
-        .query('SELECT FunctionId FROM Functions WHERE Code = @code');
+      if (data.deptId) {
+        const deptCheck = await pool.request()
+          .input('deptId', sql.UniqueIdentifier, data.deptId)
+          .query('SELECT DepartmentId FROM Departments WHERE DepartmentId = @deptId');
 
-      if (codeCheck.recordset.length > 0) {
-        throw new ConflictError(`Function with code '${data.code}' already exists`);
+        if (deptCheck.recordset.length === 0) {
+          throw new ValidationError('Department not found');
+        }
       }
 
-      // Create Function
+      // Create Function — Code is auto-increment, not passed
       const result = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
+        .input('deptId', sql.UniqueIdentifier, data.deptId || null)
         .query(`
-          INSERT INTO Functions (Code, Name, IsActive, CreatedAt)
+          INSERT INTO Functions (Name, DeptId, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@code, @name, 1, GETDATE())
+          VALUES (@name, @deptId, 1, GETDATE())
         `);
 
-      logger.info('Function created', { code: data.code });
+      logger.info('Function created', { name: data.name });
       return result.recordset[0];
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
@@ -119,22 +113,20 @@ class FunctionService {
         throw new NotFoundError('Function not found');
       }
 
-      // Validate code if provided
-      if (data.code && !this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
+      // Validate code if provided — no-op since Code is auto-increment
+      // (kept for backward compatibility, no validation needed)
 
-      // Check for duplicate code if code is being changed
-      if (data.code) {
-        const codeCheck = await pool.request()
-          .input('code', sql.NVarChar(20), data.code)
-          .input('functionId', sql.UniqueIdentifier, functionId)
-          .query('SELECT FunctionId FROM Functions WHERE Code = @code AND FunctionId != @functionId');
+      if (data.deptId !== undefined && data.deptId !== null) {
+        const deptCheck = await pool.request()
+          .input('deptId', sql.UniqueIdentifier, data.deptId)
+          .query('SELECT DepartmentId FROM Departments WHERE DepartmentId = @deptId');
 
-        if (codeCheck.recordset.length > 0) {
-          throw new ConflictError(`Function with code '${data.code}' already exists`);
+        if (deptCheck.recordset.length === 0) {
+          throw new ValidationError('Department not found');
         }
       }
+
+      // Check for duplicate code if code is being changed — no-op since Code is auto-increment
 
       // Validate name if provided
       if (data.name !== undefined && (!data.name || data.name.trim().length === 0 || data.name.length > 200)) {
@@ -145,15 +137,11 @@ class FunctionService {
         throw new ValidationError('isActive must be boolean');
       }
 
-      // Build update query
+      // Build update query — Code is auto-increment, never updated
       const updateFields = [];
       const request = pool.request();
       request.input('functionId', sql.UniqueIdentifier, functionId);
 
-      if (data.code !== undefined) {
-        updateFields.push('Code = @code');
-        request.input('code', sql.NVarChar(20), data.code);
-      }
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
         request.input('name', sql.NVarChar(200), data.name);
@@ -161,6 +149,10 @@ class FunctionService {
       if (data.isActive !== undefined) {
         updateFields.push('IsActive = @isActive');
         request.input('isActive', sql.Bit, data.isActive);
+      }
+      if (data.deptId !== undefined) {
+        updateFields.push('DeptId = @deptId');
+        request.input('deptId', sql.UniqueIdentifier, data.deptId || null);
       }
 
       if (updateFields.length === 0) {
@@ -272,13 +264,17 @@ class FunctionService {
   async getFunctions(filter = {}) {
     try {
       const pool = await db.getPool();
-      let query = 'SELECT * FROM Functions';
+      let query = `
+        SELECT f.*, d.Code AS DepartmentCode, d.Name AS DepartmentName
+        FROM Functions f
+        LEFT JOIN Departments d ON f.DeptId = d.DepartmentId
+      `;
 
       if (!filter.includeInactive) {
-        query += ' WHERE IsActive = 1';
+        query += ' WHERE f.IsActive = 1';
       }
 
-      query += ' ORDER BY Name';
+      query += ' ORDER BY f.Name';
 
       const result = await pool.request().query(query);
       return result.recordset;
@@ -298,7 +294,12 @@ class FunctionService {
       const pool = await db.getPool();
       const result = await pool.request()
         .input('functionId', sql.UniqueIdentifier, functionId)
-        .query('SELECT * FROM Functions WHERE FunctionId = @functionId');
+        .query(`
+          SELECT f.*, d.Code AS DepartmentCode, d.Name AS DepartmentName
+          FROM Functions f
+          LEFT JOIN Departments d ON f.DeptId = d.DepartmentId
+          WHERE f.FunctionId = @functionId
+        `);
 
       if (result.recordset.length === 0) {
         throw new NotFoundError('Function not found');
@@ -322,3 +323,4 @@ module.exports.FunctionService = FunctionService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+

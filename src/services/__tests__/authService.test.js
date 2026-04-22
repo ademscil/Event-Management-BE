@@ -1,9 +1,11 @@
 const authService = require('../authService');
 const ldapService = require('../ldapService');
+const emailService = require('../emailService');
 const db = require('../../database/connection');
 
 // Mock dependencies
 jest.mock('../ldapService');
+jest.mock('../emailService');
 jest.mock('../../database/connection');
 jest.mock('../../config/logger');
 
@@ -28,8 +30,11 @@ describe('AuthService', () => {
     db.getPool = jest.fn().mockResolvedValue(mockPool);
     db.sql = {
       VarChar: 'VarChar',
+      NVarChar: 'NVarChar',
+      Bit: 'Bit',
       UniqueIdentifier: 'UniqueIdentifier',
-      DateTime: 'DateTime'
+      DateTime: 'DateTime',
+      DateTime2: 'DateTime2'
     };
   });
 
@@ -265,6 +270,57 @@ describe('AuthService', () => {
 
       expect(result).toBe(true);
       expect(mockRequest.query).toHaveBeenCalled();
+    });
+  });
+
+  describe('requestPasswordReset', () => {
+    it('should return generic success and send email for local user by email', async () => {
+      mockRequest.query
+        .mockResolvedValueOnce({
+          recordset: [{
+            UserId: '123e4567-e89b-12d3-a456-426614174000',
+            Username: 'localuser',
+            DisplayName: 'Local User',
+            Email: 'local@example.com',
+            PhoneNumber: '6281234567890',
+            UseLDAP: 0,
+            IsActive: 1
+          }]
+        })
+        .mockResolvedValueOnce({ recordset: [] })
+        .mockResolvedValueOnce({ recordset: [] });
+
+      emailService.sendEmail.mockResolvedValue({ success: true });
+
+      const result = await authService.requestPasswordReset('email', 'local@example.com', {
+        ipAddress: '127.0.0.1'
+      });
+
+      expect(result.success).toBe(true);
+      expect(emailService.sendEmail).toHaveBeenCalled();
+    });
+  });
+
+  describe('resetPassword', () => {
+    it('should reset password for valid token', async () => {
+      mockRequest.query
+        .mockResolvedValueOnce({
+          recordset: [{
+            PasswordResetTokenId: '333e4567-e89b-12d3-a456-426614174000',
+            UserId: '123e4567-e89b-12d3-a456-426614174000',
+            ExpiresAt: new Date(Date.now() + 10 * 60 * 1000),
+            UsedAt: null,
+            UseLDAP: 0,
+            IsActive: 1
+          }]
+        })
+        .mockResolvedValueOnce({ recordset: [] })
+        .mockResolvedValueOnce({ recordset: [] })
+        .mockResolvedValueOnce({ recordset: [] });
+
+      const result = await authService.resetPassword('valid-token', 'password123');
+
+      expect(result.success).toBe(true);
     });
   });
 });

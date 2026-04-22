@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('./sql-client');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
 
@@ -237,3 +239,4 @@ if (require.main === module) {
 }
 
 module.exports = DatabaseInitializer;
+

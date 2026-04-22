@@ -1,4 +1,6 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const BaseRepository = require('./baseRepository');
 const db = require('../database/connection');
 const logger = require('../config/logger');
@@ -39,21 +41,17 @@ class DivisionService {
   }
 
   /**
-   * Validate code format
-   * @param {string} code - Code to validate
-   * @returns {boolean} True if valid
+   * Validate code format — no longer needed, Code is auto-increment
+   * Kept for backward compatibility
    */
   validateCode(code) {
-    // 2-20 characters, alphanumeric and hyphen only
-    const codeRegex = /^[a-zA-Z0-9-]{2,20}$/;
-    return codeRegex.test(code);
+    return true;
   }
 
   /**
    * Create a new Division
    * @param {Object} data - Division data
    * @param {string} data.businessUnitId - Parent Business Unit ID (required)
-   * @param {string} data.code - Unique code (2-20 chars, alphanumeric + hyphen)
    * @param {string} data.name - Division name (1-200 chars)
    * @returns {Promise<Object>} Created Division
    */
@@ -62,11 +60,6 @@ class DivisionService {
       // Validate required parent
       if (!data.businessUnitId) {
         throw new ValidationError('Business Unit ID is required');
-      }
-
-      // Validate code
-      if (!this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
       }
 
       // Validate name
@@ -85,27 +78,17 @@ class DivisionService {
         throw new ValidationError('Parent Business Unit does not exist or is inactive');
       }
 
-      // Check for duplicate code
-      const codeCheck = await pool.request()
-        .input('code', sql.NVarChar(20), data.code)
-        .query('SELECT DivisionId FROM Divisions WHERE Code = @code');
-
-      if (codeCheck.recordset.length > 0) {
-        throw new ConflictError(`Division with code '${data.code}' already exists`);
-      }
-
-      // Create Division
+      // Create Division — Code is auto-increment, not passed
       const result = await pool.request()
         .input('businessUnitId', sql.UniqueIdentifier, data.businessUnitId)
-        .input('code', sql.NVarChar(20), data.code)
         .input('name', sql.NVarChar(200), data.name)
         .query(`
-          INSERT INTO Divisions (BusinessUnitId, Code, Name, IsActive, CreatedAt)
+          INSERT INTO Divisions (BusinessUnitId, Name, IsActive, CreatedAt)
           OUTPUT INSERTED.*
-          VALUES (@businessUnitId, @code, @name, 1, GETDATE())
+          VALUES (@businessUnitId, @name, 1, GETDATE())
         `);
 
-      logger.info('Division created', { code: data.code, businessUnitId: data.businessUnitId });
+      logger.info('Division created', { name: data.name, businessUnitId: data.businessUnitId });
       return result.recordset[0];
     } catch (error) {
       if (error.name === 'ValidationError' || error.name === 'ConflictError') {
@@ -146,23 +129,6 @@ class DivisionService {
         }
       }
 
-      // Validate code if provided
-      if (data.code && !this.validateCode(data.code)) {
-        throw new ValidationError('Code must be 2-20 characters, alphanumeric and hyphen only');
-      }
-
-      // Check for duplicate code if code is being changed
-      if (data.code) {
-        const codeCheck = await pool.request()
-          .input('code', sql.NVarChar(20), data.code)
-          .input('divisionId', sql.UniqueIdentifier, divisionId)
-          .query('SELECT DivisionId FROM Divisions WHERE Code = @code AND DivisionId != @divisionId');
-
-        if (codeCheck.recordset.length > 0) {
-          throw new ConflictError(`Division with code '${data.code}' already exists`);
-        }
-      }
-
       // Validate name if provided
       if (data.name !== undefined && (!data.name || data.name.trim().length === 0 || data.name.length > 200)) {
         throw new ValidationError('Name is required and must be 1-200 characters');
@@ -172,7 +138,7 @@ class DivisionService {
         throw new ValidationError('isActive must be boolean');
       }
 
-      // Build update query
+      // Build update query — Code is auto-increment, never updated
       const updateFields = [];
       const request = pool.request();
       request.input('divisionId', sql.UniqueIdentifier, divisionId);
@@ -180,10 +146,6 @@ class DivisionService {
       if (data.businessUnitId !== undefined) {
         updateFields.push('BusinessUnitId = @businessUnitId');
         request.input('businessUnitId', sql.UniqueIdentifier, data.businessUnitId);
-      }
-      if (data.code !== undefined) {
-        updateFields.push('Code = @code');
-        request.input('code', sql.NVarChar(20), data.code);
       }
       if (data.name !== undefined) {
         updateFields.push('Name = @name');
@@ -358,4 +320,5 @@ module.exports.DivisionService = DivisionService;
 module.exports.ValidationError = ValidationError;
 module.exports.ConflictError = ConflictError;
 module.exports.NotFoundError = NotFoundError;
+
 

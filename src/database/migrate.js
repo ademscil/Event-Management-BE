@@ -1,6 +1,8 @@
+const sql = require('./sql-client');
 const fs = require('fs').promises;
 const path = require('path');
-const sql = require('mssql');
+
+  
 const config = require('../config');
 const logger = require('../config/logger');
 
@@ -171,3 +173,4 @@ if (require.main === module) {
 }
 
 module.exports = MigrationRunner;
+

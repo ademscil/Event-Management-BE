@@ -1,10 +1,12 @@
+const sql = require('../database/sql-client');
 /**
  * Scheduled Operations Processor
  * Background job that processes scheduled email blasts and reminders
  */
 
 const cron = require('node-cron');
-const sql = require('mssql');
+
+  
 const logger = require('../config/logger');
 const db = require('../database/connection');
 const emailService = require('./emailService');
@@ -364,4 +366,5 @@ class ScheduledOperationsProcessor {
 
 // Export singleton instance
 module.exports = new ScheduledOperationsProcessor();
+
 

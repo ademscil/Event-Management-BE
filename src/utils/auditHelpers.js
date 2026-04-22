@@ -11,10 +11,45 @@
 function getAuditContext(req) {
   return {
     userId: req.user?.userId || null,
-    username: req.user?.username || 'anonymous',
+    username: String(req.user?.username || req.user?.displayName || req.body?.username || '').trim() || 'system',
     ipAddress: getIpAddress(req),
     userAgent: getUserAgent(req)
   };
+}
+
+const SENSITIVE_KEYS = new Set([
+  'password',
+  'passwordhash',
+  'currentpassword',
+  'newpassword',
+  'confirmpassword',
+  'token',
+  'accesstoken',
+  'refreshtoken',
+  'authorization',
+  'secret'
+]);
+
+function sanitizeAuditPayload(value) {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(sanitizeAuditPayload);
+  }
+
+  if (typeof value === 'object') {
+    return Object.entries(value).reduce((acc, [key, nestedValue]) => {
+      const normalizedKey = String(key || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      acc[key] = SENSITIVE_KEYS.has(normalizedKey)
+        ? '[REDACTED]'
+        : sanitizeAuditPayload(nestedValue);
+      return acc;
+    }, {});
+  }
+
+  return value;
 }
 
 /**
@@ -47,7 +82,7 @@ function getUserAgent(req) {
 function getUserInfo(req) {
   return {
     userId: req.user?.userId || null,
-    username: req.user?.username || 'anonymous'
+    username: String(req.user?.username || req.user?.displayName || req.body?.username || '').trim() || 'system'
   };
 }
 
@@ -55,5 +90,6 @@ module.exports = {
   getAuditContext,
   getIpAddress,
   getUserAgent,
-  getUserInfo
+  getUserInfo,
+  sanitizeAuditPayload
 };

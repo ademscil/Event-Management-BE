@@ -491,11 +491,6 @@ const validateSendBlast = [
 ];
 
 const validateScheduleOperation = [
-  body('surveyId')
-    .notEmpty().withMessage('Survey ID is required'),
-  body('operationType')
-    .notEmpty().withMessage('Operation type is required')
-    .isIn(['Blast', 'Reminder']).withMessage('Invalid operation type'),
   body('frequency')
     .notEmpty().withMessage('Frequency is required')
     .isIn(['once', 'daily', 'weekly', 'monthly']).withMessage('Invalid frequency'),

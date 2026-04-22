@@ -8,31 +8,49 @@
 USE CSI;
 GO
 
+DECLARE @PublishCycleParentTable NVARCHAR(128);
+DECLARE @CreatePublishCyclesSql NVARCHAR(MAX);
+
+SET @PublishCycleParentTable = CASE
+    WHEN OBJECT_ID(N'dbo.Events', N'U') IS NOT NULL THEN N'Events'
+    WHEN OBJECT_ID(N'dbo.Surveys', N'U') IS NOT NULL THEN N'Surveys'
+    ELSE NULL
+END;
+
+IF @PublishCycleParentTable IS NULL
+BEGIN
+    THROW 50000, 'Migration 020 requires dbo.Events or dbo.Surveys user table.', 1;
+END
+
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'SurveyPublishCycles')
 BEGIN
-    CREATE TABLE SurveyPublishCycles (
-        PublishCycleId UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
-        SurveyId UNIQUEIDENTIFIER NOT NULL,
-        CycleNumber INT NOT NULL,
-        PublishedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-        PublishedBy UNIQUEIDENTIFIER NULL,
-        IsCurrent BIT NOT NULL DEFAULT 1,
-        GeneratedAt DATETIME2 NULL,
-        GeneratedBy UNIQUEIDENTIFIER NULL,
-        CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-        UpdatedAt DATETIME2 NULL,
-        FOREIGN KEY (SurveyId) REFERENCES Surveys(SurveyId) ON DELETE CASCADE,
-        FOREIGN KEY (PublishedBy) REFERENCES Users(UserId),
-        FOREIGN KEY (GeneratedBy) REFERENCES Users(UserId),
-        CONSTRAINT UQ_SurveyPublishCycles_SurveyCycle UNIQUE (SurveyId, CycleNumber)
-    );
+    SET @CreatePublishCyclesSql = N'
+        CREATE TABLE SurveyPublishCycles (
+            PublishCycleId UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+            SurveyId UNIQUEIDENTIFIER NOT NULL,
+            CycleNumber INT NOT NULL,
+            PublishedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+            PublishedBy UNIQUEIDENTIFIER NULL,
+            IsCurrent BIT NOT NULL DEFAULT 1,
+            GeneratedAt DATETIME2 NULL,
+            GeneratedBy UNIQUEIDENTIFIER NULL,
+            CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+            UpdatedAt DATETIME2 NULL,
+            CONSTRAINT FK_SurveyPublishCycles_Survey FOREIGN KEY (SurveyId) REFERENCES dbo.' + QUOTENAME(@PublishCycleParentTable) + N'(SurveyId) ON DELETE CASCADE,
+            CONSTRAINT FK_SurveyPublishCycles_PublishedBy FOREIGN KEY (PublishedBy) REFERENCES dbo.Users(UserId),
+            CONSTRAINT FK_SurveyPublishCycles_GeneratedBy FOREIGN KEY (GeneratedBy) REFERENCES dbo.Users(UserId),
+            CONSTRAINT UQ_SurveyPublishCycles_SurveyCycle UNIQUE (SurveyId, CycleNumber)
+        );
 
-    CREATE UNIQUE INDEX UX_SurveyPublishCycles_Current
-        ON SurveyPublishCycles(SurveyId)
-        WHERE IsCurrent = 1;
+        CREATE UNIQUE INDEX UX_SurveyPublishCycles_Current
+            ON SurveyPublishCycles(SurveyId)
+            WHERE IsCurrent = 1;
 
-    CREATE INDEX IX_SurveyPublishCycles_SurveyId ON SurveyPublishCycles(SurveyId);
-    CREATE INDEX IX_SurveyPublishCycles_GeneratedAt ON SurveyPublishCycles(GeneratedAt);
+        CREATE INDEX IX_SurveyPublishCycles_SurveyId ON SurveyPublishCycles(SurveyId);
+        CREATE INDEX IX_SurveyPublishCycles_GeneratedAt ON SurveyPublishCycles(GeneratedAt);
+    ';
+
+    EXEC sp_executesql @CreatePublishCyclesSql;
 END
 GO
 

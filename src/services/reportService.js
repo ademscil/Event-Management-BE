@@ -1,33 +1,36 @@
-const sql = require('mssql');
+const sql = require('../database/sql-client');
+
+  
 const pool = require('../database/connection');
 const logger = require('../config/logger');
 const ExcelJS = require('exceljs');
 const PDFDocument = require('pdfkit');
 const publishCycleService = require('./publishCycleService');
-
-/**
- * Custom error classes
- */
-class ValidationError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
-
-class NotFoundError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'NotFoundError';
-  }
-}
-
-class UnauthorizedError extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'UnauthorizedError';
-  }
-}
+const {
+  NotFoundError,
+  UnauthorizedError,
+  ValidationError
+} = require('./report-service/errors');
+const {
+  formatScore,
+  sanitizeForExcel
+} = require('./report-service/export-utils');
+const { exportToExcel: exportReportToExcel } = require('./report-service/excel-export');
+const {
+  formatDateLabel,
+  styleKeyValueCell,
+  styleSectionNote,
+  styleSheetHeader,
+  styleTableHeader
+} = require('./report-service/excel-styles');
+const { buildWorkbookView } = require('./report-service/workbook-view');
+const {
+  getApprovedTakeouts,
+  getDepartmentHeadReview,
+  getScoresByFunction,
+  getTakeoutComparisonTable
+} = require('./report-service/review');
+const { exportToPdf: exportReportToPdf } = require('./report-service/pdf-export');
 
 /**
  * Report Service
@@ -36,11 +39,31 @@ class UnauthorizedError extends Error {
 class ReportService {
   constructor() {
     this.pool = pool;
+    this.responsesHasApprovalStatus = null;
   }
 
   async createRequest() {
     const dbPool = await this.pool.getPool();
     return dbPool.request();
+  }
+
+  async hasResponseApprovalStatusColumn() {
+    if (typeof this.responsesHasApprovalStatus === 'boolean') {
+      return this.responsesHasApprovalStatus;
+    }
+
+    const result = await (await this.createRequest())
+      .input('tableName', sql.NVarChar(128), 'Responses')
+      .input('columnName', sql.NVarChar(128), 'ResponseApprovalStatus')
+      .query(`
+        SELECT COUNT(1) AS Cnt
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = @tableName
+          AND COLUMN_NAME = @columnName
+      `);
+
+    this.responsesHasApprovalStatus = Number(result.recordset?.[0]?.Cnt || 0) > 0;
+    return this.responsesHasApprovalStatus;
   }
 
   /**
@@ -57,9 +80,11 @@ class ReportService {
    * @param {string} request.userRole - User role for authorization
    * @returns {Promise<Object>} Report data
    */
-  async generateReport(request) {
+  async generateReport(request, options = {}) {
     try {
       logger.info(`Generating report for surveyId: ${request.surveyId}`);
+      const persistGeneratedState = options.persistGeneratedState !== false;
+      const requireGeneratedState = options.requireGeneratedState === true;
 
       // Validate survey exists
       const surveyResult = await (await this.createRequest())
@@ -76,6 +101,10 @@ class ReportService {
 
       const survey = surveyResult.recordset[0];
       const currentCycle = await publishCycleService.getCurrentCycle(this.pool, request.surveyId);
+      if (requireGeneratedState && !currentCycle?.GeneratedAt) {
+        throw new ValidationError('Report belum digenerate untuk event ini.');
+      }
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
 
       const responseCountRequest = await this.createRequest();
       responseCountRequest.input('surveyId', sql.UniqueIdentifier, request.surveyId);
@@ -84,6 +113,9 @@ class ReportService {
           FROM Responses
           WHERE SurveyId = @surveyId
         `;
+      if (hasApprovalStatus) {
+        responseCountQuery += ` AND ResponseApprovalStatus = 'ApprovedFinal'`;
+      }
       if (currentCycle?.PublishCycleId) {
         responseCountQuery += ' AND PublishCycleId = @publishCycleId';
         responseCountRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
@@ -135,6 +167,10 @@ class ReportService {
         sqlRequest.input('publishCycleId', sql.UniqueIdentifier, currentCycle.PublishCycleId);
       }
 
+      if (hasApprovalStatus) {
+        filterConditions.push(`r.ResponseApprovalStatus = 'ApprovedFinal'`);
+      }
+
       // Apply function filter through application mapping
       if (request.functionId) {
         filterConditions.push(`
@@ -184,6 +220,7 @@ class ReportService {
           bu.Name as BusinessUnitName,
           d.Name as DivisionName,
           dept.Name as DepartmentName,
+          f.Name as FunctionName,
           a.Name as ApplicationName,
           q.QuestionId,
           q.PromptText,
@@ -203,6 +240,12 @@ class ReportService {
         INNER JOIN Divisions d ON r.DivisionId = d.DivisionId
         INNER JOIN Departments dept ON r.DepartmentId = dept.DepartmentId
         INNER JOIN Applications a ON r.ApplicationId = a.ApplicationId
+        LEFT JOIN (
+          SELECT fam2.ApplicationId, MIN(fam2.FunctionId) AS FunctionId
+          FROM FunctionApplicationMappings fam2
+          GROUP BY fam2.ApplicationId
+        ) fam_single ON fam_single.ApplicationId = a.ApplicationId
+        LEFT JOIN Functions f ON f.FunctionId = fam_single.FunctionId
         WHERE ${whereClause}
         ORDER BY r.SubmittedAt DESC, q.DisplayOrder
       `;
@@ -224,7 +267,7 @@ class ReportService {
 
       const distributionResult = await sqlRequest.query(distributionQuery);
 
-      if (currentCycle?.PublishCycleId) {
+      if (persistGeneratedState && currentCycle?.PublishCycleId) {
         await publishCycleService.markGenerated(this.pool, currentCycle.PublishCycleId, request.userId || null);
       }
 
@@ -235,7 +278,9 @@ class ReportService {
           description: survey.Description,
           startDate: survey.StartDate,
           endDate: survey.EndDate,
-          status: survey.Status
+          status: survey.Status,
+          generatedAt: currentCycle?.GeneratedAt || null,
+          publishCycleId: currentCycle?.PublishCycleId || null,
         },
         statistics: {
           totalResponses: statistics.TotalResponses || 0,
@@ -278,6 +323,19 @@ class ReportService {
   }
 
   /**
+   * View a generated report without mutating generated state.
+   * @param {Object} request - Report request parameters
+   * @returns {Promise<Object>} Report data
+   */
+  async viewReport(request) {
+    logger.info(`Viewing generated report for surveyId: ${request.surveyId}`);
+    return await this.generateReport(
+      { ...request, includeTakenOut: request.includeTakenOut ?? false },
+      { persistGeneratedState: false, requireGeneratedState: true }
+    );
+  }
+
+  /**
    * Get report selection list (all surveys with metadata)
    * @returns {Promise<Array>} List of surveys with metadata
    */
@@ -292,6 +350,7 @@ class ReportService {
 
       const sqlRequest = (await this.createRequest());
       let roleFilter = '';
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
       if (isAdminEvent && userId) {
         sqlRequest.input('adminUserId', sql.UniqueIdentifier, userId);
         roleFilter = `
@@ -328,7 +387,10 @@ class ReportService {
               s.Description,
               s.StartDate,
               s.EndDate,
-              s.Status,
+              CASE
+                WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+                ELSE s.Status
+              END as Status,
               CONCAT(
                 FORMAT(s.StartDate, 'dd MMM yyyy'), 
                 ' - ', 
@@ -352,6 +414,7 @@ class ReportService {
                 cc.PublishCycleId IS NULL
                 OR r.PublishCycleId = cc.PublishCycleId
              )
+             ${hasApprovalStatus ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
             WHERE 1 = 1
             ${roleFilter}
             GROUP BY 
@@ -373,22 +436,23 @@ class ReportService {
               s.Description,
               s.StartDate,
               s.EndDate,
-              s.Status,
+              CASE
+                WHEN s.Status = 'Active' AND s.EndDate IS NOT NULL AND s.EndDate < GETDATE() THEN 'Closed'
+                ELSE s.Status
+              END as Status,
               CONCAT(
                 FORMAT(s.StartDate, 'dd MMM yyyy'), 
                 ' - ', 
                 FORMAT(s.EndDate, 'dd MMM yyyy')
               ) as Period,
               COUNT(DISTINCT r.ResponseId) as RespondentCount,
-              CASE 
-                WHEN COUNT(DISTINCT r.ResponseId) > 0 THEN 1
-                ELSE 0
-              END as HasGeneratedReport,
+              CAST(0 AS INT) as HasGeneratedReport,
               CAST(NULL AS UNIQUEIDENTIFIER) as CurrentPublishCycleId,
               CAST(NULL AS INT) as CurrentCycleNumber,
               CAST(NULL AS DATETIME2) as GeneratedAt
             FROM Surveys s
             LEFT JOIN Responses r ON s.SurveyId = r.SurveyId
+              ${hasApprovalStatus ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
             WHERE 1 = 1
             ${roleFilter}
             GROUP BY 
@@ -435,6 +499,7 @@ class ReportService {
       const sqlRequest = (await this.createRequest());
       sqlRequest.input('surveyId', sql.UniqueIdentifier, surveyId);
       const currentCycle = await publishCycleService.getCurrentCycle(this.pool, surveyId);
+      const hasApprovalStatus = await this.hasResponseApprovalStatusColumn();
 
       let functionFilter = '';
       if (functionId) {
@@ -478,6 +543,7 @@ class ReportService {
         LEFT JOIN QuestionResponses qr ON q.QuestionId = qr.QuestionId
         LEFT JOIN Responses r ON qr.ResponseId = r.ResponseId
         WHERE q.SurveyId = @surveyId
+        ${hasApprovalStatus ? "AND (r.ResponseApprovalStatus = 'ApprovedFinal' OR r.ResponseId IS NULL)" : ''}
         ${functionFilter}
         ${cycleFilter}
         GROUP BY q.QuestionId, q.PromptText, q.Type, q.DisplayOrder
@@ -546,6 +612,7 @@ class ReportService {
         WHERE qr.IsBestComment = 1
         AND r.DepartmentId = @departmentId
         AND s.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         ORDER BY bcf.CreatedAt DESC
       `;
 
@@ -607,6 +674,7 @@ class ReportService {
         INNER JOIN Surveys s ON q.SurveyId = s.SurveyId
         WHERE r.DepartmentId = @departmentId
         AND s.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         AND qr.NumericValue IS NOT NULL
         AND qr.TakeoutStatus != 'TakenOut'
         GROUP BY f.FunctionId, f.Name, s.TargetScore
@@ -665,6 +733,7 @@ class ReportService {
         WHERE qr.TakeoutStatus = 'TakenOut'
         AND r.DepartmentId = @departmentId
         AND q.SurveyId = @surveyId
+        ${await this.hasResponseApprovalStatusColumn() ? "AND r.ResponseApprovalStatus = 'ApprovedFinal'" : ''}
         ORDER BY qr.ReviewedAt DESC
       `;
 
@@ -748,6 +817,10 @@ class ReportService {
     }
   }
 
+  buildWorkbookView(reportData) {
+    return buildWorkbookView(reportData);
+  }
+
   /**
    * Export report to Excel
    * @param {Object} request - Report request parameters
@@ -755,125 +828,22 @@ class ReportService {
    */
   async exportToExcel(request) {
     try {
-      logger.info(`Exporting report to Excel for surveyId: ${request.surveyId}`);
-
-      // Generate report data
-      const reportData = await this.generateReport(request);
-
-      // Create workbook
-      const workbook = new ExcelJS.Workbook();
-      workbook.creator = 'CSI Portal';
-      workbook.created = new Date();
-
-      // Sheet 1: Summary
-      const summarySheet = workbook.addWorksheet('Summary');
-      summarySheet.columns = [
-        { header: 'Metric', key: 'metric', width: 30 },
-        { header: 'Value', key: 'value', width: 20 }
-      ];
-
-      // Add summary data with formula injection prevention
-      summarySheet.addRows([
-        { metric: 'Survey Title', value: this.sanitizeForExcel(reportData.survey.title) },
-        { metric: 'Survey Period', value: `${new Date(reportData.survey.startDate).toLocaleDateString()} - ${new Date(reportData.survey.endDate).toLocaleDateString()}` },
-        { metric: 'Total Responses', value: reportData.statistics.totalResponses },
-        { metric: 'Unique Respondents', value: reportData.statistics.uniqueRespondents },
-        { metric: 'Average Rating', value: reportData.statistics.averageRating || 'N/A' },
-        { metric: 'Min Rating', value: reportData.statistics.minRating || 'N/A' },
-        { metric: 'Max Rating', value: reportData.statistics.maxRating || 'N/A' },
-        { metric: 'Active Responses', value: reportData.statistics.activeCount },
-        { metric: 'Taken Out Responses', value: reportData.statistics.takenOutCount },
-        { metric: 'Proposed Takeout', value: reportData.statistics.proposedCount }
-      ]);
-
-      // Style summary sheet
-      summarySheet.getRow(1).font = { bold: true };
-      summarySheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE0E0E0' }
-      };
-
-      // Sheet 2: Details
-      const detailsSheet = workbook.addWorksheet('Details');
-      detailsSheet.columns = [
-        { header: 'Response ID', key: 'responseId', width: 15 },
-        { header: 'Respondent Email', key: 'email', width: 25 },
-        { header: 'Respondent Name', key: 'name', width: 25 },
-        { header: 'Business Unit', key: 'businessUnit', width: 20 },
-        { header: 'Division', key: 'division', width: 20 },
-        { header: 'Department', key: 'department', width: 20 },
-        { header: 'Application', key: 'application', width: 20 },
-        { header: 'Question', key: 'question', width: 40 },
-        { header: 'Question Type', key: 'questionType', width: 15 },
-        { header: 'Response Value', key: 'responseValue', width: 30 },
-        { header: 'Comment', key: 'comment', width: 40 },
-        { header: 'Status', key: 'status', width: 15 },
-        { header: 'Takeout Reason', key: 'takeoutReason', width: 40 },
-        { header: 'Submitted At', key: 'submittedAt', width: 20 }
-      ];
-
-      // Add detail rows with formula injection prevention
-      reportData.responses.forEach(response => {
-        let responseValue = '';
-        if (response.TextValue) responseValue = this.sanitizeForExcel(response.TextValue);
-        else if (response.NumericValue !== null) responseValue = response.NumericValue;
-        else if (response.DateValue) responseValue = new Date(response.DateValue).toLocaleDateString();
-        else if (response.MatrixValues) responseValue = this.sanitizeForExcel(response.MatrixValues);
-
-        detailsSheet.addRow({
-          responseId: response.ResponseId,
-          email: this.sanitizeForExcel(response.RespondentEmail),
-          name: this.sanitizeForExcel(response.RespondentName),
-          businessUnit: this.sanitizeForExcel(response.BusinessUnitName),
-          division: this.sanitizeForExcel(response.DivisionName),
-          department: this.sanitizeForExcel(response.DepartmentName),
-          application: this.sanitizeForExcel(response.ApplicationName),
-          question: this.sanitizeForExcel(response.PromptText),
-          questionType: response.QuestionType,
-          responseValue: responseValue,
-          comment: this.sanitizeForExcel(response.CommentValue || ''),
-          status: response.TakeoutStatus,
-          takeoutReason: this.sanitizeForExcel(response.TakeoutReason || ''),
-          submittedAt: new Date(response.SubmittedAt).toLocaleString()
-        });
-      });
-
-      // Style details sheet
-      detailsSheet.getRow(1).font = { bold: true };
-      detailsSheet.getRow(1).fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FFE0E0E0' }
-      };
-
-      // Sheet 3: Rating Distribution
-      if (reportData.ratingDistribution.length > 0) {
-        const chartSheet = workbook.addWorksheet('Rating Distribution');
-        chartSheet.columns = [
-          { header: 'Rating', key: 'rating', width: 15 },
-          { header: 'Count', key: 'count', width: 15 }
-        ];
-
-        reportData.ratingDistribution.forEach(item => {
-          chartSheet.addRow({
-            rating: item.Rating,
-            count: item.Count
-          });
-        });
-
-        // Style chart sheet
-        chartSheet.getRow(1).font = { bold: true };
-        chartSheet.getRow(1).fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'FFE0E0E0' }
-        };
-      }
-
-      // Generate buffer
-      const buffer = await workbook.xlsx.writeBuffer();
-      return buffer;
+      return await exportReportToExcel(
+        {
+          ExcelJS,
+          buildWorkbookView: this.buildWorkbookView.bind(this),
+          formatDateLabel,
+          formatScore,
+          logger,
+          sanitizeForExcel,
+          styleKeyValueCell,
+          styleSectionNote,
+          styleSheetHeader,
+          styleTableHeader,
+          viewReport: this.viewReport.bind(this)
+        },
+        request,
+      );
 
     } catch (error) {
       logger.error(`Error exporting to Excel: ${error.message}`, { error });
@@ -886,19 +856,6 @@ class ReportService {
    * @param {string} value - Cell value
    * @returns {string} Sanitized value
    */
-  sanitizeForExcel(value) {
-    if (!value) return '';
-    
-    const strValue = String(value);
-    
-    // Check if value starts with formula characters
-    if (strValue.match(/^[=+\-@]/)) {
-      return `'${strValue}`; // Prefix with single quote to treat as text
-    }
-    
-    return strValue;
-  }
-
   /**
    * Export report to PDF
    * @param {Object} request - Report request parameters
@@ -906,162 +863,7 @@ class ReportService {
    */
   async exportToPdf(request) {
     try {
-      logger.info(`Exporting report to PDF for surveyId: ${request.surveyId}`);
-
-      // Generate report data
-      const reportData = await this.generateReport(request);
-
-      return new Promise((resolve, reject) => {
-        try {
-          // Create PDF document
-          const doc = new PDFDocument({
-            size: 'A4',
-            margins: { top: 50, bottom: 50, left: 50, right: 50 }
-          });
-
-          // Collect chunks
-          const chunks = [];
-          doc.on('data', chunk => chunks.push(chunk));
-          doc.on('end', () => resolve(Buffer.concat(chunks)));
-          doc.on('error', reject);
-
-          // Header
-          doc.fontSize(20).font('Helvetica-Bold').text('CSI Survey Report', { align: 'center' });
-          doc.moveDown();
-
-          // Survey Information
-          doc.fontSize(14).font('Helvetica-Bold').text('Survey Information');
-          doc.moveDown(0.5);
-          doc.fontSize(10).font('Helvetica');
-          doc.text(`Title: ${reportData.survey.title}`);
-          doc.text(`Period: ${new Date(reportData.survey.startDate).toLocaleDateString()} - ${new Date(reportData.survey.endDate).toLocaleDateString()}`);
-          doc.text(`Status: ${reportData.survey.status}`);
-          doc.moveDown();
-
-          // Summary Statistics
-          doc.fontSize(14).font('Helvetica-Bold').text('Summary Statistics');
-          doc.moveDown(0.5);
-          doc.fontSize(10).font('Helvetica');
-          
-          const stats = [
-            ['Total Responses', reportData.statistics.totalResponses],
-            ['Unique Respondents', reportData.statistics.uniqueRespondents],
-            ['Average Rating', reportData.statistics.averageRating || 'N/A'],
-            ['Min Rating', reportData.statistics.minRating || 'N/A'],
-            ['Max Rating', reportData.statistics.maxRating || 'N/A'],
-            ['Active Responses', reportData.statistics.activeCount],
-            ['Taken Out Responses', reportData.statistics.takenOutCount],
-            ['Proposed Takeout', reportData.statistics.proposedCount]
-          ];
-
-          stats.forEach(([label, value]) => {
-            doc.text(`${label}: ${value}`);
-          });
-          doc.moveDown();
-
-          // Rating Distribution
-          if (reportData.ratingDistribution.length > 0) {
-            doc.fontSize(14).font('Helvetica-Bold').text('Rating Distribution');
-            doc.moveDown(0.5);
-            doc.fontSize(10).font('Helvetica');
-
-            // Create simple bar chart representation
-            const maxCount = Math.max(...reportData.ratingDistribution.map(d => d.Count));
-            const barWidth = 400;
-
-            reportData.ratingDistribution.forEach(item => {
-              const barLength = (item.Count / maxCount) * barWidth;
-              doc.text(`Rating ${item.Rating}: ${'█'.repeat(Math.floor(barLength / 10))} (${item.Count})`);
-            });
-            doc.moveDown();
-          }
-
-          // Response Details Table (first 20 responses)
-          doc.addPage();
-          doc.fontSize(14).font('Helvetica-Bold').text('Response Details (Sample)');
-          doc.moveDown(0.5);
-          doc.fontSize(8).font('Helvetica');
-
-          const tableTop = doc.y;
-          const colWidths = {
-            email: 120,
-            application: 100,
-            question: 150,
-            value: 80,
-            status: 60
-          };
-
-          // Table header
-          let x = 50;
-          doc.font('Helvetica-Bold');
-          doc.text('Email', x, tableTop, { width: colWidths.email, continued: false });
-          x += colWidths.email;
-          doc.text('Application', x, tableTop, { width: colWidths.application, continued: false });
-          x += colWidths.application;
-          doc.text('Question', x, tableTop, { width: colWidths.question, continued: false });
-          x += colWidths.question;
-          doc.text('Value', x, tableTop, { width: colWidths.value, continued: false });
-          x += colWidths.value;
-          doc.text('Status', x, tableTop, { width: colWidths.status, continued: false });
-
-          doc.moveDown(0.5);
-          doc.font('Helvetica');
-
-          // Table rows (limit to first 20)
-          const sampleResponses = reportData.responses.slice(0, 20);
-          sampleResponses.forEach((response, index) => {
-            if (doc.y > 700) {
-              doc.addPage();
-              doc.fontSize(8).font('Helvetica');
-            }
-
-            let responseValue = '';
-            if (response.TextValue) responseValue = response.TextValue.substring(0, 30);
-            else if (response.NumericValue !== null) responseValue = String(response.NumericValue);
-            else if (response.DateValue) responseValue = new Date(response.DateValue).toLocaleDateString();
-
-            x = 50;
-            const y = doc.y;
-            doc.text(response.RespondentEmail.substring(0, 25), x, y, { width: colWidths.email, continued: false });
-            x += colWidths.email;
-            doc.text(response.ApplicationName.substring(0, 20), x, y, { width: colWidths.application, continued: false });
-            x += colWidths.application;
-            doc.text(response.PromptText.substring(0, 30), x, y, { width: colWidths.question, continued: false });
-            x += colWidths.question;
-            doc.text(responseValue, x, y, { width: colWidths.value, continued: false });
-            x += colWidths.value;
-            doc.text(response.TakeoutStatus, x, y, { width: colWidths.status, continued: false });
-
-            doc.moveDown(0.8);
-          });
-
-          if (reportData.responses.length > 20) {
-            doc.moveDown();
-            doc.fontSize(8).font('Helvetica-Oblique');
-            doc.text(`... and ${reportData.responses.length - 20} more responses. Download Excel for complete data.`);
-          }
-
-          // Footer
-          const pages = doc.bufferedPageRange();
-          for (let i = 0; i < pages.count; i++) {
-            doc.switchToPage(i);
-            doc.fontSize(8).font('Helvetica');
-            doc.text(
-              `Generated on ${new Date().toLocaleString()} | Page ${i + 1} of ${pages.count}`,
-              50,
-              doc.page.height - 50,
-              { align: 'center' }
-            );
-          }
-
-          // Finalize PDF
-          doc.end();
-
-        } catch (error) {
-          reject(error);
-        }
-      });
-
+      return await exportReportToPdf(PDFDocument, logger, request, this.viewReport.bind(this));
     } catch (error) {
       logger.error(`Error exporting to PDF: ${error.message}`, { error });
       throw error;
@@ -1070,4 +872,5 @@ class ReportService {
 }
 
 module.exports = new ReportService();
+
 

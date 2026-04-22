@@ -26,11 +26,16 @@ describe('ResponseService', () => {
         TargetRespondents: 100,
         TargetScore: 8,
         DuplicatePreventionEnabled: true,
+        HeroTitle: 'Welcome to CSI Survey',
+        HeroSubtitle: 'Please share your feedback',
         HeroImageUrl: null,
         LogoUrl: null,
         BackgroundImageUrl: null,
         BackgroundColor: '#ffffff',
+        PrimaryColor: '#125ba1',
+        SecondaryColor: '#2c8dd8',
         FontFamily: 'Arial',
+        ButtonStyle: 'pill',
         ShowProgressBar: true,
         ShowPageNumbers: true,
         MultiPage: false,
@@ -67,6 +72,11 @@ describe('ResponseService', () => {
       expect(result).toBeDefined();
       expect(result.surveyId).toBe(mockSurveyId);
       expect(result.title).toBe('Test Survey');
+      expect(result.configuration.heroTitle).toBe('Welcome to CSI Survey');
+      expect(result.configuration.heroSubtitle).toBe('Please share your feedback');
+      expect(result.configuration.primaryColor).toBe('#125ba1');
+      expect(result.configuration.secondaryColor).toBe('#2c8dd8');
+      expect(result.configuration.buttonStyle).toBe('pill');
       expect(result.questions).toHaveLength(1);
       expect(result.questions[0].type).toBe('Text');
     });
@@ -224,6 +234,25 @@ describe('ResponseService', () => {
     it('should throw ValidationError if respondent is missing', () => {
       expect(() => responseService.validateOrganizationalSelections(null))
         .toThrow('Respondent information is required');
+    });
+  });
+
+  describe('normalizeRespondent', () => {
+    it('should default missing name and email to safe values', () => {
+      const result = responseService.normalizeRespondent({});
+
+      expect(result.name).toBe('Respondent');
+      expect(result.email).toBeNull();
+    });
+
+    it('should normalize provided email to lowercase', () => {
+      const result = responseService.normalizeRespondent({
+        name: 'John Doe',
+        email: 'John.Doe@Example.COM '
+      });
+
+      expect(result.name).toBe('John Doe');
+      expect(result.email).toBe('john.doe@example.com');
     });
   });
 

@@ -2,6 +2,30 @@ const { body, param, query, validationResult } = require('express-validator');
 const emailService = require('../services/emailService');
 const logger = require('../config/logger');
 
+function handleEmailError(res, error, fallbackMessage) {
+  const message = error?.message || fallbackMessage;
+
+  if (/not found/i.test(message)) {
+    return res.status(404).json({
+      error: 'Not found',
+      message
+    });
+  }
+
+  if (/validation|required|invalid|ended|no recipients/i.test(message)) {
+    return res.status(400).json({
+      error: 'Validation failed',
+      message
+    });
+  }
+
+  logger.error(fallbackMessage, error);
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Send survey blast
  * POST /api/v1/emails/blast
@@ -13,26 +37,19 @@ async function sendSurveyBlast(req, res) {
     const request = req.body;
     const result = await emailService.sendSurveyBlast(request);
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Survey blast failed',
-        message: result.errorMessage
-      });
-    }
-
     res.json({
       success: true,
       message: 'Survey blast sent successfully',
+      total: result.total,
       sent: result.sent,
-      failed: result.failed
+      failed: result.failed,
+      skipped: result.skipped || 0,
+      errors: result.errors || [],
+      detail: result.message || null
     });
 
   } catch (error) {
-    logger.error('Send survey blast controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while sending survey blast'
-    });
+    return handleEmailError(res, error, 'An error occurred while sending survey blast');
   }
 }
 
@@ -73,26 +90,19 @@ async function sendReminders(req, res) {
     const request = req.body;
     const result = await emailService.sendReminders(request);
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Reminder sending failed',
-        message: result.errorMessage
-      });
-    }
-
     res.json({
       success: true,
       message: 'Reminders sent successfully',
+      total: result.total,
       sent: result.sent,
-      failed: result.failed
+      failed: result.failed,
+      skipped: result.skipped || 0,
+      errors: result.errors || [],
+      detail: result.message || null
     });
 
   } catch (error) {
-    logger.error('Send reminders controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while sending reminders'
-    });
+    return handleEmailError(res, error, 'An error occurred while sending reminders');
   }
 }
 
@@ -104,7 +114,7 @@ async function sendReminders(req, res) {
  */
 async function getNonRespondents(req, res) {
   try {
-    const surveyId = parseInt(req.params.surveyId);
+    const surveyId = String(req.params.surveyId || '').trim();
     const nonRespondents = await emailService.getNonRespondents(surveyId);
 
     res.json({
@@ -114,11 +124,7 @@ async function getNonRespondents(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get non-respondents controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching non-respondents'
-    });
+    return handleEmailError(res, error, 'An error occurred while fetching non-respondents');
   }
 }
 
@@ -130,21 +136,19 @@ async function getNonRespondents(req, res) {
  */
 async function sendApprovalNotification(req, res) {
   try {
-    const { recipientEmail, notification } = req.body;
-
-    if (!recipientEmail || !notification) {
+    if (!req.body || typeof req.body !== 'object') {
       return res.status(400).json({
         error: 'Validation failed',
-        message: 'Recipient email and notification are required'
+        message: 'Notification payload is required'
       });
     }
 
-    const result = await emailService.sendApprovalNotification(recipientEmail, notification);
+    const result = await emailService.sendApprovalNotification(req.body);
 
     if (!result.success) {
       return res.status(400).json({
         error: 'Notification sending failed',
-        message: result.errorMessage
+        message: result.error
       });
     }
 
@@ -154,11 +158,7 @@ async function sendApprovalNotification(req, res) {
     });
 
   } catch (error) {
-    logger.error('Send approval notification controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while sending notification'
-    });
+    return handleEmailError(res, error, 'An error occurred while sending notification');
   }
 }
 
@@ -170,21 +170,19 @@ async function sendApprovalNotification(req, res) {
  */
 async function sendRejectionNotification(req, res) {
   try {
-    const { recipientEmail, notification } = req.body;
-
-    if (!recipientEmail || !notification) {
+    if (!req.body || typeof req.body !== 'object') {
       return res.status(400).json({
         error: 'Validation failed',
-        message: 'Recipient email and notification are required'
+        message: 'Notification payload is required'
       });
     }
 
-    const result = await emailService.sendRejectionNotification(recipientEmail, notification);
+    const result = await emailService.sendRejectionNotification(req.body);
 
     if (!result.success) {
       return res.status(400).json({
         error: 'Notification sending failed',
-        message: result.errorMessage
+        message: result.error
       });
     }
 
@@ -194,11 +192,7 @@ async function sendRejectionNotification(req, res) {
     });
 
   } catch (error) {
-    logger.error('Send rejection notification controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while sending notification'
-    });
+    return handleEmailError(res, error, 'An error occurred while sending notification');
   }
 }
 

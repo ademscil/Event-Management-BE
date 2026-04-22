@@ -80,6 +80,53 @@ describe('SurveyService - Scheduling Operations', () => {
     });
   });
 
+  describe('resolveInitialExecution', () => {
+    it('should keep the provided datetime for one-time schedules', () => {
+      const scheduledDate = new Date('2024-03-20T10:15:00');
+      const result = surveyService.resolveInitialExecution(scheduledDate, 'once', null, null);
+
+      expect(result.toISOString()).toBe(scheduledDate.toISOString());
+    });
+
+    it('should align daily schedules to the chosen time on the start date', () => {
+      const result = surveyService.resolveInitialExecution(new Date('2024-03-20T00:00:00'), 'daily', '14:30', null);
+
+      expect(result.toISOString()).toBe(new Date('2024-03-20T14:30:00').toISOString());
+    });
+
+    it('should align weekly schedules to the selected weekday on or after the start date', () => {
+      const result = surveyService.resolveInitialExecution(new Date('2024-03-20T00:00:00'), 'weekly', '16:00', 1);
+
+      expect(result.toISOString()).toBe(new Date('2024-03-25T16:00:00').toISOString());
+    });
+  });
+
+  describe('normalizeScheduledTime', () => {
+    it('should normalize HH:mm input to HH:mm:ss', () => {
+      expect(surveyService.normalizeScheduledTime('14:30')).toBe('14:30:00');
+    });
+
+    it('should keep HH:mm:ss input intact', () => {
+      expect(surveyService.normalizeScheduledTime('14:30:45')).toBe('14:30:45');
+    });
+
+    it('should reject invalid time input', () => {
+      expect(() => surveyService.normalizeScheduledTime('25:99'))
+        .toThrow('Scheduled time must use HH:mm or HH:mm:ss format');
+    });
+  });
+
+  describe('toSqlTimeValue', () => {
+    it('should convert HH:mm input to a Date value for SQL TIME parameters', () => {
+      const sqlTimeValue = surveyService.toSqlTimeValue('14:30');
+
+      expect(sqlTimeValue).toBeInstanceOf(Date);
+      expect(sqlTimeValue.getHours()).toBe(14);
+      expect(sqlTimeValue.getMinutes()).toBe(30);
+      expect(sqlTimeValue.getSeconds()).toBe(0);
+    });
+  });
+
   describe('scheduleBlast', () => {
     const mockSurveyId = '123e4567-e89b-12d3-a456-426614174000';
     const mockUserId = '123e4567-e89b-12d3-a456-426614174001';
@@ -157,7 +204,7 @@ describe('SurveyService - Scheduling Operations', () => {
             EmbedCover: false,
             TargetCriteria: null,
             Status: 'Pending',
-            NextExecutionAt: new Date('2024-03-21T14:30:00'),
+            NextExecutionAt: new Date('2024-03-20T14:30:00'),
             CreatedAt: new Date()
           }]
         });
@@ -167,6 +214,11 @@ describe('SurveyService - Scheduling Operations', () => {
       expect(result).toHaveProperty('frequency', 'daily');
       expect(result).toHaveProperty('scheduledTime', '14:30');
       expect(result.nextExecutionAt).toBeTruthy();
+      expect(mockRequest.input).toHaveBeenCalledWith(
+        'scheduledTime',
+        sql.Time,
+        expect.any(Date)
+      );
     });
 
     it('should schedule a weekly blast successfully', async () => {
@@ -198,7 +250,7 @@ describe('SurveyService - Scheduling Operations', () => {
             EmbedCover: true,
             TargetCriteria: null,
             Status: 'Pending',
-            NextExecutionAt: new Date('2024-03-27T09:00:00'),
+            NextExecutionAt: new Date('2024-03-20T09:00:00'),
             CreatedAt: new Date()
           }]
         });
@@ -344,7 +396,7 @@ describe('SurveyService - Scheduling Operations', () => {
             EmailTemplate: request.emailTemplate,
             EmbedCover: true,
             Status: 'Pending',
-            NextExecutionAt: new Date('2024-03-27T16:00:00'),
+            NextExecutionAt: new Date('2024-03-25T16:00:00'),
             CreatedAt: new Date()
           }]
         });
@@ -354,6 +406,11 @@ describe('SurveyService - Scheduling Operations', () => {
       expect(result).toHaveProperty('frequency', 'weekly');
       expect(result).toHaveProperty('dayOfWeek', 1);
       expect(result.nextExecutionAt).toBeTruthy();
+      expect(mockRequest.input).toHaveBeenCalledWith(
+        'scheduledTime',
+        sql.Time,
+        expect.any(Date)
+      );
     });
 
     it('should throw ValidationError if required fields are missing', async () => {

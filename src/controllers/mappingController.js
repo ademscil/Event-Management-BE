@@ -3,6 +3,33 @@ const mappingService = require('../services/mappingService');
 const bulkImportService = require('../services/bulkImportService');
 const logger = require('../config/logger');
 
+function handleMappingError(res, error, fallbackMessage) {
+  const message = error?.message || fallbackMessage;
+  const statusCode = error?.statusCode;
+
+  if (statusCode && statusCode < 500) {
+    return res.status(statusCode).json({
+      error: error.name || 'Request failed',
+      message
+    });
+  }
+
+  if (
+    /required|already exists|not found|must be provided|invalid|inactive/i.test(message)
+  ) {
+    return res.status(400).json({
+      error: error?.name || 'Validation failed',
+      message
+    });
+  }
+
+  logger.error(fallbackMessage, error);
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Validation rules for creating Function-Application mapping
  */
@@ -58,17 +85,19 @@ async function createFunctionAppMapping(req, res) {
     const { functionId, applicationId, applicationIds } = req.body;
     const createdBy = req.user?.userId;
 
-    let result;
+    let mapping;
+    let mappings;
     if (applicationIds && applicationIds.length > 0) {
       // Multiple mappings
-      result = await mappingService.createMultipleFunctionAppMappings(
+      const result = await mappingService.createMultipleFunctionAppMappings(
         functionId,
         applicationIds,
         createdBy
       );
+      mappings = result.created;
     } else if (applicationId) {
       // Single mapping
-      result = await mappingService.createFunctionAppMapping(
+      mapping = await mappingService.createFunctionAppMapping(
         functionId,
         applicationId,
         createdBy
@@ -80,26 +109,15 @@ async function createFunctionAppMapping(req, res) {
       });
     }
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping creation failed',
-        message: result.errorMessage
-      });
-    }
-
     res.status(201).json({
       success: true,
       message: 'Function-Application mapping created successfully',
-      mapping: result.mapping,
-      mappings: result.mappings
+      mapping,
+      mappings
     });
 
   } catch (error) {
-    logger.error('Create Function-Application mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while creating mapping');
   }
 }
 
@@ -193,14 +211,7 @@ async function getFunctionsByApplication(req, res) {
 async function deleteFunctionAppMapping(req, res) {
   try {
     const mappingId = req.params.id;
-    const result = await mappingService.deleteFunctionAppMapping(mappingId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await mappingService.deleteFunctionAppMapping(mappingId);
 
     res.json({
       success: true,
@@ -208,11 +219,7 @@ async function deleteFunctionAppMapping(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete Function-Application mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while deleting mapping');
   }
 }
 
@@ -258,17 +265,19 @@ async function createAppDeptMapping(req, res) {
     const { departmentId, applicationId, applicationIds } = req.body;
     const createdBy = req.user?.userId;
 
-    let result;
+    let mapping;
+    let mappings;
     if (applicationIds && applicationIds.length > 0) {
       // Multiple mappings
-      result = await mappingService.createMultipleAppDeptMappings(
+      const result = await mappingService.createMultipleAppDeptMappings(
         departmentId,
         applicationIds,
         createdBy
       );
+      mappings = result.created;
     } else if (applicationId) {
       // Single mapping
-      result = await mappingService.createAppDeptMapping(
+      mapping = await mappingService.createAppDeptMapping(
         applicationId,
         departmentId,
         createdBy
@@ -280,26 +289,15 @@ async function createAppDeptMapping(req, res) {
       });
     }
 
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping creation failed',
-        message: result.errorMessage
-      });
-    }
-
     res.status(201).json({
       success: true,
       message: 'Application-Department mapping created successfully',
-      mapping: result.mapping,
-      mappings: result.mappings
+      mapping,
+      mappings
     });
 
   } catch (error) {
-    logger.error('Create Application-Department mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while creating mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while creating mapping');
   }
 }
 
@@ -393,14 +391,7 @@ async function getDepartmentsByApplication(req, res) {
 async function deleteAppDeptMapping(req, res) {
   try {
     const mappingId = req.params.id;
-    const result = await mappingService.deleteAppDeptMapping(mappingId);
-
-    if (!result.success) {
-      return res.status(400).json({
-        error: 'Mapping deletion failed',
-        message: result.errorMessage
-      });
-    }
+    await mappingService.deleteAppDeptMapping(mappingId);
 
     res.json({
       success: true,
@@ -408,11 +399,7 @@ async function deleteAppDeptMapping(req, res) {
     });
 
   } catch (error) {
-    logger.error('Delete Application-Department mapping controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while deleting mapping'
-    });
+    return handleMappingError(res, error, 'An error occurred while deleting mapping');
   }
 }
 
@@ -436,6 +423,114 @@ async function exportAppDeptMappingsToCSV(req, res) {
       error: 'Internal server error',
       message: 'An error occurred while exporting mappings'
     });
+  }
+}
+
+/**
+ * Download Function-Application mapping Excel template
+ * GET /api/v1/mappings/function-app/template
+ */
+async function downloadFunctionAppTemplate(req, res) {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'CSI Portal';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Function-App Mapping');
+
+    sheet.columns = [
+      { header: 'Function Code', key: 'functionCode', width: 20 },
+      { header: 'Application Code', key: 'applicationCode', width: 20 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Add example rows
+    sheet.addRow({ functionCode: '101', applicationCode: '201' });
+    sheet.addRow({ functionCode: '102', applicationCode: '202' });
+
+    // Add instruction sheet
+    const infoSheet = workbook.addWorksheet('Petunjuk');
+    infoSheet.getCell('A1').value = 'Petunjuk Pengisian Template Mapping Function - Aplikasi';
+    infoSheet.getCell('A1').font = { bold: true, size: 13 };
+    infoSheet.getCell('A3').value = 'Kolom yang wajib diisi:';
+    infoSheet.getCell('A3').font = { bold: true };
+    infoSheet.getCell('A4').value = '1. Function Code  : Kode numerik Function (lihat Master Function)';
+    infoSheet.getCell('A5').value = '2. Application Code: Kode numerik Aplikasi (lihat Master Aplikasi)';
+    infoSheet.getCell('A7').value = 'Catatan:';
+    infoSheet.getCell('A7').font = { bold: true };
+    infoSheet.getCell('A8').value = '- Baris pertama adalah header, jangan diubah.';
+    infoSheet.getCell('A9').value = '- Satu baris = satu pasangan mapping Function → Aplikasi.';
+    infoSheet.getCell('A10').value = '- Duplikat akan dilewati secara otomatis.';
+    infoSheet.getColumn('A').width = 60;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=template-mapping-function-aplikasi.xlsx');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    logger.error('Download function-app template error:', error);
+    res.status(500).json({ error: 'Internal server error', message: 'Gagal mengunduh template' });
+  }
+}
+
+/**
+ * Download Application-Department mapping Excel template
+ * GET /api/v1/mappings/app-dept/template
+ */
+async function downloadAppDeptTemplate(req, res) {
+  try {
+    const ExcelJS = require('exceljs');
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'CSI Portal';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Dept-App Mapping');
+
+    sheet.columns = [
+      { header: 'Application Code', key: 'applicationCode', width: 20 },
+      { header: 'Department Code', key: 'departmentCode', width: 20 },
+    ];
+
+    // Style header row
+    const headerRow = sheet.getRow(1);
+    headerRow.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1F4E79' } };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' };
+    headerRow.height = 20;
+
+    // Add example rows
+    sheet.addRow({ applicationCode: '201', departmentCode: '301' });
+    sheet.addRow({ applicationCode: '202', departmentCode: '302' });
+
+    // Add instruction sheet
+    const infoSheet = workbook.addWorksheet('Petunjuk');
+    infoSheet.getCell('A1').value = 'Petunjuk Pengisian Template Mapping Department - Aplikasi';
+    infoSheet.getCell('A1').font = { bold: true, size: 13 };
+    infoSheet.getCell('A3').value = 'Kolom yang wajib diisi:';
+    infoSheet.getCell('A3').font = { bold: true };
+    infoSheet.getCell('A4').value = '1. Application Code: Kode numerik Aplikasi (lihat Master Aplikasi)';
+    infoSheet.getCell('A5').value = '2. Department Code : Kode numerik Department (lihat Master Department)';
+    infoSheet.getCell('A7').value = 'Catatan:';
+    infoSheet.getCell('A7').font = { bold: true };
+    infoSheet.getCell('A8').value = '- Baris pertama adalah header, jangan diubah.';
+    infoSheet.getCell('A9').value = '- Satu baris = satu pasangan mapping Aplikasi → Department.';
+    infoSheet.getCell('A10').value = '- Duplikat akan dilewati secara otomatis.';
+    infoSheet.getColumn('A').width = 60;
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename=template-mapping-dept-aplikasi.xlsx');
+    res.send(Buffer.from(buffer));
+  } catch (error) {
+    logger.error('Download app-dept template error:', error);
+    res.status(500).json({ error: 'Internal server error', message: 'Gagal mengunduh template' });
   }
 }
 
@@ -508,6 +603,8 @@ module.exports = {
   deleteAppDeptMapping,
   exportAppDeptMappingsToCSV,
   bulkImportMappings,
+  downloadFunctionAppTemplate,
+  downloadAppDeptTemplate,
   createFunctionAppMappingValidation,
   createAppDeptMappingValidation
 };

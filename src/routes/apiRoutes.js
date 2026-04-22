@@ -1,6 +1,7 @@
 ﻿const express = require('express');
 const multer = require('multer');
 const config = require('../config');
+const validators = require('../middleware/validators');
 const {
   requireAuth,
   requirePermission
@@ -70,30 +71,40 @@ router.patch('/users/:id/password', requireAuth, requirePermission('users:update
 
 // Master data
 router.get('/business-units', requireAuth, requirePermission('master-data:read'), businessUnitController.getBusinessUnits);
+router.get('/business-units/template', requireAuth, requirePermission('master-data:read'), businessUnitController.downloadTemplate);
+router.post('/business-units/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), businessUnitController.uploadBusinessUnits);
 router.get('/business-units/:id', requireAuth, requirePermission('master-data:read'), businessUnitController.getBusinessUnitById);
 router.post('/business-units', requireAuth, requirePermission('master-data:create'), businessUnitController.createBusinessUnitValidation, businessUnitController.createBusinessUnit);
 router.put('/business-units/:id', requireAuth, requirePermission('master-data:update'), businessUnitController.updateBusinessUnitValidation, businessUnitController.updateBusinessUnit);
 router.delete('/business-units/:id', requireAuth, requirePermission('master-data:delete'), businessUnitController.deleteBusinessUnit);
 
 router.get('/divisions', requireAuth, requirePermission('master-data:read'), divisionController.getDivisions);
+router.get('/divisions/template', requireAuth, requirePermission('master-data:read'), divisionController.downloadTemplate);
+router.post('/divisions/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), divisionController.uploadDivisions);
 router.get('/divisions/:id', requireAuth, requirePermission('master-data:read'), divisionController.getDivisionById);
 router.post('/divisions', requireAuth, requirePermission('master-data:create'), divisionController.createDivisionValidation, divisionController.createDivision);
 router.put('/divisions/:id', requireAuth, requirePermission('master-data:update'), divisionController.updateDivisionValidation, divisionController.updateDivision);
 router.delete('/divisions/:id', requireAuth, requirePermission('master-data:delete'), divisionController.deleteDivision);
 
 router.get('/departments', requireAuth, requirePermission('master-data:read'), departmentController.getDepartments);
+router.get('/departments/template', requireAuth, requirePermission('master-data:read'), departmentController.downloadTemplate);
+router.post('/departments/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), departmentController.uploadDepartments);
 router.get('/departments/:id', requireAuth, requirePermission('master-data:read'), departmentController.getDepartmentById);
 router.post('/departments', requireAuth, requirePermission('master-data:create'), departmentController.createDepartmentValidation, departmentController.createDepartment);
 router.put('/departments/:id', requireAuth, requirePermission('master-data:update'), departmentController.updateDepartmentValidation, departmentController.updateDepartment);
 router.delete('/departments/:id', requireAuth, requirePermission('master-data:delete'), departmentController.deleteDepartment);
 
 router.get('/functions', requireAuth, requirePermission('master-data:read'), functionController.getFunctions);
+router.get('/functions/template', requireAuth, requirePermission('master-data:read'), functionController.downloadTemplate);
+router.post('/functions/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), functionController.uploadFunctions);
 router.get('/functions/:id', requireAuth, requirePermission('master-data:read'), functionController.getFunctionById);
 router.post('/functions', requireAuth, requirePermission('master-data:create'), functionController.createFunctionValidation, functionController.createFunction);
 router.put('/functions/:id', requireAuth, requirePermission('master-data:update'), functionController.updateFunctionValidation, functionController.updateFunction);
 router.delete('/functions/:id', requireAuth, requirePermission('master-data:delete'), functionController.deleteFunction);
 
 router.get('/applications', requireAuth, requirePermission('master-data:read'), applicationController.getApplications);
+router.get('/applications/template', requireAuth, requirePermission('master-data:read'), applicationController.downloadTemplate);
+router.post('/applications/upload', requireAuth, requirePermission('master-data:create'), spreadsheetUpload.single('file'), applicationController.uploadApplications);
 router.get('/applications/:id', requireAuth, requirePermission('master-data:read'), applicationController.getApplicationById);
 router.post('/applications', requireAuth, requirePermission('master-data:create'), applicationController.createApplicationValidation, applicationController.createApplication);
 router.put('/applications/:id', requireAuth, requirePermission('master-data:update'), applicationController.updateApplicationValidation, applicationController.updateApplication);
@@ -122,12 +133,14 @@ router.get('/mappings/function-app/details', requireAuth, requirePermission('map
 });
 router.post('/mappings/function-app', requireAuth, requirePermission('mappings:create'), mappingController.createFunctionAppMappingValidation, mappingController.createFunctionAppMapping);
 router.get('/mappings/function-app/export', requireAuth, requirePermission('mappings:read'), mappingController.exportFunctionAppMappingsToCSV);
+router.get('/mappings/function-app/template', requireAuth, requirePermission('mappings:read'), mappingController.downloadFunctionAppTemplate);
 router.get('/mappings/app-dept/hierarchical', requireAuth, requirePermission('mappings:read'), (req, res, next) => {
   req.query.hierarchical = 'true';
   return mappingController.getAppDeptMappings(req, res, next);
 });
 router.post('/mappings/app-dept', requireAuth, requirePermission('mappings:create'), mappingController.createAppDeptMappingValidation, mappingController.createAppDeptMapping);
 router.get('/mappings/app-dept/export', requireAuth, requirePermission('mappings:read'), mappingController.exportAppDeptMappingsToCSV);
+router.get('/mappings/app-dept/template', requireAuth, requirePermission('mappings:read'), mappingController.downloadAppDeptTemplate);
 
 // Surveys and questions
 router.get('/surveys', requireAuth, requirePermission('surveys:read'), surveyController.getSurveys);
@@ -140,8 +153,8 @@ router.get('/surveys/:id/preview', requireAuth, requirePermission('surveys:read'
 router.post('/surveys/:id/link', requireAuth, requirePermission('surveys:read'), surveyController.generateSurveyLink);
 router.post('/surveys/:id/qrcode', requireAuth, requirePermission('surveys:read'), surveyController.generateQRCode);
 router.post('/surveys/:id/embed', requireAuth, requirePermission('surveys:read'), surveyController.generateEmbedCode);
-router.post('/surveys/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), surveyController.scheduleBlast);
-router.post('/surveys/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), surveyController.scheduleReminder);
+router.post('/surveys/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleBlast);
+router.post('/surveys/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleReminder);
 router.get('/surveys/:id/scheduled-operations', requireAuth, requirePermission('surveys:read'), surveyController.getScheduledOperations);
 router.delete('/surveys/scheduled-operations/:operationId', requireAuth, requirePermission('surveys:update'), surveyController.cancelScheduledOperation);
 router.post('/surveys/:id/upload/hero', requireAuth, requirePermission('surveys:update'), surveyController.upload.single('image'), surveyController.uploadHeroImage);
@@ -159,8 +172,8 @@ router.get('/events/:id/preview', requireAuth, requirePermission('surveys:read')
 router.post('/events/:id/link', requireAuth, requirePermission('surveys:read'), surveyController.generateSurveyLink);
 router.post('/events/:id/qrcode', requireAuth, requirePermission('surveys:read'), surveyController.generateQRCode);
 router.post('/events/:id/embed', requireAuth, requirePermission('surveys:read'), surveyController.generateEmbedCode);
-router.post('/events/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), surveyController.scheduleBlast);
-router.post('/events/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), surveyController.scheduleReminder);
+router.post('/events/:id/schedule-blast', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleBlast);
+router.post('/events/:id/schedule-reminder', requireAuth, requirePermission('surveys:update'), validators.validateScheduleOperation, surveyController.scheduleReminder);
 router.get('/events/:id/scheduled-operations', requireAuth, requirePermission('surveys:read'), surveyController.getScheduledOperations);
 
 router.get('/questions/survey/:surveyId', requireAuth, requirePermission('surveys:read'), questionController.getQuestionsBySurvey);
@@ -184,6 +197,7 @@ router.get('/responses/survey/:surveyId/statistics', requireAuth, requirePermiss
 
 // Reports
 router.post('/reports/generate', requireAuth, requirePermission('reports:read'), reportController.generateReport);
+router.post('/reports/view', requireAuth, requirePermission('reports:read'), reportController.viewReport);
 router.post('/reports/before-takeout', requireAuth, requirePermission('reports:read'), reportController.generateBeforeTakeoutReport);
 router.post('/reports/after-takeout', requireAuth, requirePermission('reports:read'), reportController.generateAfterTakeoutReport);
 router.get('/reports/selection-list', requireAuth, requirePermission('reports:read'), reportController.getReportSelectionList);
@@ -199,6 +213,9 @@ router.post('/reports/statistics', requireAuth, requirePermission('reports:read'
 router.post('/approvals/propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.proposeTakeoutForQuestion);
 router.post('/approvals/bulk-propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.bulkProposeTakeout);
 router.delete('/approvals/propose-takeout', requireAuth, requirePermission('responses:propose-takeout'), approvalController.cancelProposedTakeout);
+router.post('/approvals/respondents/approve', requireAuth, requirePermission('responses:approve-initial'), approvalController.approveInitialResponses);
+router.post('/approvals/respondents/reject', requireAuth, requirePermission('responses:reject-initial'), approvalController.rejectInitialResponses);
+router.post('/approvals/respondents/final-approve', requireAuth, requirePermission('responses:approve-final'), approvalController.approveFinalResponses);
 router.post('/approvals/approve', requireAuth, requirePermission('approvals:approve'), approvalController.approveProposedTakeout);
 router.post('/approvals/reject', requireAuth, requirePermission('approvals:reject'), approvalController.rejectProposedTakeout);
 router.get('/approvals/pending', requireAuth, requirePermission('approvals:read'), approvalController.getPendingApprovals);

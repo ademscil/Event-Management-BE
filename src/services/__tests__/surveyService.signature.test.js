@@ -224,16 +224,42 @@ describe('SurveyService - Signature Question Type', () => {
       expect(result.ImageUrl).toBe('/uploads/signature-example.png');
     });
 
-    it('should validate required fields for Signature question', async () => {
+    it('should allow Signature question without promptText', async () => {
+      mockRequest.query.mockReset();
+
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{
+          SurveyId: mockSurveyId,
+          Status: 'Draft'
+        }]
+      });
+
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{ MaxOrder: 0 }]
+      });
+
+      mockRequest.query.mockResolvedValueOnce({
+        recordset: [{
+          QuestionId: '123e4567-e89b-12d3-a456-426614174002',
+          SurveyId: mockSurveyId,
+          Type: 'Signature',
+          PromptText: '',
+          IsMandatory: false,
+          DisplayOrder: 1,
+          PageNumber: 1,
+          CreatedBy: mockUserId
+        }]
+      });
+
       const questionData = {
         type: 'Signature',
-        // Missing promptText
         createdBy: mockUserId
       };
 
-      await expect(
-        surveyService.addQuestion(mockSurveyId, questionData)
-      ).rejects.toThrow('Prompt text is required');
+      const result = await surveyService.addQuestion(mockSurveyId, questionData);
+
+      expect(result).toBeDefined();
+      expect(result.PromptText).toBe('');
     });
 
     it('should create mandatory Signature question', async () => {

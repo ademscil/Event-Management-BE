@@ -2,18 +2,42 @@ const { body, param, query, validationResult } = require('express-validator');
 const responseService = require('../services/responseService');
 const logger = require('../config/logger');
 
+const surveyIdentifierPattern = /^([0-9]+|[0-9a-fA-F-]{36})$/;
+
+function handleResponseError(res, error, fallbackMessage) {
+  const name = String(error?.name || '');
+  if (name === 'ValidationError' || name === 'DuplicateError') {
+    return res.status(400).json({
+      error: 'Validation failed',
+      message: error.message || fallbackMessage
+    });
+  }
+  if (name === 'NotFoundError') {
+    return res.status(404).json({
+      error: 'Not found',
+      message: error.message || fallbackMessage
+    });
+  }
+
+  logger.error(fallbackMessage, error);
+  return res.status(500).json({
+    error: 'Internal server error',
+    message: fallbackMessage
+  });
+}
+
 /**
  * Validation rules for submitting a response
  */
 const submitResponseValidation = [
   body('surveyId')
     .notEmpty().withMessage('Survey ID is required')
-    .isUUID().withMessage('Survey ID must be a valid UUID'),
+    .matches(surveyIdentifierPattern).withMessage('Survey ID must be a survey number or UUID'),
   body('respondent.email')
-    .notEmpty().withMessage('Email is required')
+    .optional({ values: 'falsy' })
     .isEmail().withMessage('Invalid email format'),
   body('respondent.name')
-    .notEmpty().withMessage('Name is required')
+    .optional({ values: 'falsy' })
     .trim()
     .isLength({ min: 1, max: 200 }).withMessage('Name must be between 1 and 200 characters'),
   body('respondent.businessUnitId')
@@ -59,11 +83,7 @@ async function getSurveyForm(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get survey form controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching survey form'
-    });
+    return handleResponseError(res, error, 'An error occurred while fetching survey form');
   }
 }
 
@@ -87,11 +107,7 @@ async function getAvailableApplications(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get available applications controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching applications'
-    });
+    return handleResponseError(res, error, 'An error occurred while fetching applications');
   }
 }
 
@@ -128,15 +144,11 @@ async function submitResponse(req, res) {
     res.status(201).json({
       success: true,
       message: 'Response submitted successfully',
-      responseId: result.responseId
+      responseIds: result.responseIds
     });
 
   } catch (error) {
-    logger.error('Submit response controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while submitting response'
-    });
+    return handleResponseError(res, error, 'An error occurred while submitting response');
   }
 }
 
@@ -153,10 +165,18 @@ async function checkDuplicateResponse(req, res) {
       ? applicationIds.filter(Boolean)
       : (applicationId ? [applicationId] : []);
 
-    if (!surveyId || !email || normalizedApplicationIds.length === 0) {
+    if (!surveyId || normalizedApplicationIds.length === 0) {
       return res.status(400).json({
         error: 'Validation failed',
-        message: 'Survey ID, email, and application ID are required'
+        message: 'Survey ID and application ID are required'
+      });
+    }
+
+    if (!String(email || '').trim()) {
+      return res.json({
+        success: true,
+        isDuplicate: false,
+        message: 'Duplicate check skipped because no email was provided'
       });
     }
 
@@ -196,9 +216,9 @@ async function getResponses(req, res) {
     const { surveyId, departmentId, applicationId, status, search } = req.query;
 
     const filter = {};
-    if (surveyId) filter.surveyId = parseInt(surveyId);
-    if (departmentId) filter.departmentId = parseInt(departmentId);
-    if (applicationId) filter.applicationId = parseInt(applicationId);
+    if (surveyId) filter.surveyId = String(surveyId).trim();
+    if (departmentId) filter.departmentId = String(departmentId).trim();
+    if (applicationId) filter.applicationId = String(applicationId).trim();
     if (status) filter.status = status;
     if (search) filter.search = search;
 
@@ -210,11 +230,7 @@ async function getResponses(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get responses controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching responses'
-    });
+    return handleResponseError(res, error, 'An error occurred while fetching responses');
   }
 }
 
@@ -226,7 +242,7 @@ async function getResponses(req, res) {
  */
 async function getResponseById(req, res) {
   try {
-    const responseId = parseInt(req.params.id);
+    const responseId = String(req.params.id || '').trim();
     const response = await responseService.getResponseById(responseId);
 
     if (!response) {
@@ -242,11 +258,7 @@ async function getResponseById(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get response by ID controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching response'
-    });
+    return handleResponseError(res, error, 'An error occurred while fetching response');
   }
 }
 
@@ -267,11 +279,7 @@ async function getResponseStatistics(req, res) {
     });
 
   } catch (error) {
-    logger.error('Get response statistics controller error:', error);
-    res.status(500).json({
-      error: 'Internal server error',
-      message: 'An error occurred while fetching statistics'
-    });
+    return handleResponseError(res, error, 'An error occurred while fetching statistics');
   }
 }
 

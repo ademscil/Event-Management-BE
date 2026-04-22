@@ -90,6 +90,24 @@ const refreshValidation = [
     })
 ];
 
+const forgotPasswordValidation = [
+  body('method')
+    .optional()
+    .isIn(['email', 'phone']).withMessage('Method must be email or phone'),
+  body('identifier')
+    .trim()
+    .notEmpty().withMessage('Email atau nomor telepon wajib diisi')
+];
+
+const resetPasswordValidation = [
+  body('token')
+    .trim()
+    .notEmpty().withMessage('Token reset password wajib diisi'),
+  body('password')
+    .notEmpty().withMessage('Password baru wajib diisi')
+    .isLength({ min: 8 }).withMessage('Password baru minimal 8 karakter')
+];
+
 /**
  * Login controller
  * POST /api/auth/login
@@ -127,6 +145,7 @@ async function login(req, res) {
       success: true,
       user: {
         userId: result.user.userId,
+        userKey: result.user.username,
         username: result.user.username,
         displayName: result.user.displayName,
         email: result.user.email,
@@ -202,6 +221,7 @@ async function validate(req, res) {
       valid: true,
       user: {
         userId: req.user.userId,
+        userKey: req.user.username,
         username: req.user.username,
         displayName: req.user.displayName,
         email: req.user.email,
@@ -255,6 +275,7 @@ async function refresh(req, res) {
       success: true,
       user: {
         userId: result.user.userId,
+        userKey: result.user.username,
         username: result.user.username,
         displayName: result.user.displayName,
         email: result.user.email,
@@ -283,6 +304,7 @@ async function getCurrentUser(req, res) {
     res.json({
       user: {
         userId: req.user.userId,
+        userKey: req.user.username,
         username: req.user.username,
         displayName: req.user.displayName,
         email: req.user.email,
@@ -299,12 +321,95 @@ async function getCurrentUser(req, res) {
   }
 }
 
+async function forgotPassword(req, res) {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: errors.array()
+      });
+    }
+
+    const requestedMethod = String(req.body.method || 'email').trim().toLowerCase();
+    if (requestedMethod === 'phone') {
+      return res.status(503).json({
+        error: 'Phone reset disabled',
+        message: 'Reset password via phone dinonaktifkan sementara.'
+      });
+    }
+
+    const result = await authService.requestPasswordReset(
+      'email',
+      req.body.identifier,
+      {
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('user-agent')
+      }
+    );
+
+    if (!result.success) {
+      return res.status(502).json({
+        error: 'Forgot password failed',
+        message: result.message
+      });
+    }
+
+    res.json({
+      success: true,
+      message: result.message
+    });
+  } catch (error) {
+    logger.error('Forgot password controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while requesting password reset'
+    });
+  }
+}
+
+async function resetPassword(req, res) {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: errors.array()
+      });
+    }
+
+    const result = await authService.resetPassword(req.body.token, req.body.password);
+    if (!result.success) {
+      return res.status(400).json({
+        error: 'Reset password failed',
+        message: result.errorMessage
+      });
+    }
+
+    clearAuthCookies(res);
+    res.json({
+      success: true,
+      message: result.message
+    });
+  } catch (error) {
+    logger.error('Reset password controller error:', error);
+    res.status(500).json({
+      error: 'Internal server error',
+      message: 'An error occurred while resetting password'
+    });
+  }
+}
+
 module.exports = {
   login,
   logout,
   validate,
   refresh,
   getCurrentUser,
+  forgotPassword,
+  resetPassword,
   loginValidation,
-  refreshValidation
+  refreshValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation
 };
