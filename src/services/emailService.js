@@ -340,6 +340,13 @@ class EmailService {
             return null;
         }
     }
+
+    /**
+     * Convert PNG data URL to Buffer
+     * @param {string|null} dataUrl
+     * @returns {Buffer|null}
+     */
+    dataUrlToBuffer(dataUrl) {
         if (!dataUrl || typeof dataUrl !== 'string') {
             return null;
         }
@@ -750,6 +757,20 @@ class EmailService {
      * @returns {Buffer|null}
      */
     dataUrlToBuffer(dataUrl) {
+        if (!dataUrl || typeof dataUrl !== 'string') {
+            return null;
+        }
+
+        const match = dataUrl.match(/^data:image\/png;base64,(.+)$/);
+        if (!match || !match[1]) {
+            return null;
+        }
+
+        return Buffer.from(match[1], 'base64');
+    }
+
+    /**
+     * Get non-respondents for a survey
      * @param {string} surveyId - Survey ID
      * @returns {Promise<Array>} Array of non-respondents
      */
